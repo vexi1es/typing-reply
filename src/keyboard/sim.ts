@@ -1,5 +1,5 @@
 import { LANGS, type Lang } from '../i18n';
-import { charKey, pageChars, type KeyId, type Page } from './layout';
+import { VARIANTS, charKey, pageChars, type KeyId, type Page } from './layout';
 
 export interface KeyboardState {
   lang: Lang;
@@ -18,6 +18,8 @@ export type Effect = { kind: 'insert'; text: string } | { kind: 'delete' } | { k
 /** One physical press: which key, on which keyboard page, and how the text changed. */
 export interface Press {
   key: KeyId;
+  /** Typed with a long press (accent / variant picker), see VARIANTS. */
+  longPress?: boolean;
   /** Keyboard state AT THE MOMENT of the press (the renderer needs it to locate the key). */
   kb: KeyboardState;
   effect: Effect;
@@ -34,9 +36,10 @@ const ALIASES: Record<string, string> = {
   қ: 'к',
   ғ: 'г',
   ҳ: 'х',
-  // Uzbek apostrophes: all go to the ʻ key.
-  ʼ: 'ʻ',
-  '`': 'ʻ',
+  // Uzbek oʻ / gʻ: typed with the apostrophe key of the English keyboard.
+  ʻ: "'",
+  ʼ: "'",
+  '`': "'",
   '¿': '?',
   '¡': '!',
   '«': '"',
@@ -88,13 +91,19 @@ export class KeyboardSim {
   /** Layouts “enabled” on the phone; 🌐 cycles through them. */
   readonly langs: readonly Lang[];
 
+  /** Text typed so far (for iOS auto-capitalisation). */
+  private text = '';
+
   constructor(langs: readonly Lang[]) {
     this.langs = langs;
-    this.state = { lang: langs[0]!, page: 'letters', shift: false, capsLock: false };
+    // iOS auto-capitalisation: ⇧ is already on in an empty field.
+    this.state = { lang: langs[0]!, page: 'letters', shift: true, capsLock: false };
   }
 
   private press(key: KeyId, effect: Effect = { kind: 'none' }): Press {
     const p: Press = { key, kb: { ...this.state }, effect };
+    if (effect.kind === 'insert') this.text += effect.text;
+    else if (effect.kind === 'delete') this.text = Array.from(this.text).slice(0, -1).join('');
     this.apply(key, effect);
     return p;
   }
@@ -120,11 +129,14 @@ export class KeyboardSim {
         s.page = 'letters';
         return;
       case 'space':
-        // Like iOS: after a space the keyboard returns to letters.
+        // Like iOS: after a space the keyboard returns to letters,
+        // and after the end of a sentence ⇧ turns on by itself.
         s.page = 'letters';
+        if (!s.capsLock && /[.!?…]\s$/u.test(this.text)) s.shift = true;
         return;
     }
     if (effect.kind === 'insert' && s.page === 'letters' && !s.capsLock) s.shift = false;
+    if (effect.kind === 'delete' && !s.capsLock && this.text === '') s.shift = true;
   }
 
   /**
@@ -152,7 +164,9 @@ export class KeyboardSim {
       }
     }
     if (this.state.page === 'letters') presses.push(...this.shiftFor(loc.shift, next));
-    presses.push(this.press(charKey(loc.key), { kind: 'insert', text: g }));
+    const p = this.press(charKey(loc.key), { kind: 'insert', text: g });
+    if (VARIANTS[loc.key]?.includes(g.toLocaleLowerCase()) && g.toLocaleLowerCase() !== loc.key) p.longPress = true;
+    presses.push(p);
     return presses;
   }
 

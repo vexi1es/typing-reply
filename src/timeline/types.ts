@@ -14,12 +14,15 @@ export interface Break {
 
 /**
  * `t` is seconds from the start of the video. Pauses are just gaps between events.
- * - press: a key press (with its effect on the text);
+ * - focus: the finger taps the input field and the keyboard slides up;
+ * - press: a key press (with its effect on the text); `hold` = how long the key was held before
+ *   (a long press with the variant picker), the press time is the moment of release;
  * - hover: the finger hovers over a key without pressing (grandpa looking for a letter);
  * - send: the send button is pressed.
  */
 export type TimelineEvent =
-  | ({ t: number; type: 'press' } & Press)
+  | { t: number; type: 'focus'; kb: KeyboardState }
+  | ({ t: number; type: 'press'; hold?: number } & Press)
   | { t: number; type: 'hover'; key: KeyId; kb: KeyboardState }
   | { t: number; type: 'send'; kb: KeyboardState };
 

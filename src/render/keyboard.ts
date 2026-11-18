@@ -1,5 +1,5 @@
 import type { VideoStrings } from '../i18n';
-import { KB, type KeyId, type KeyRect } from '../keyboard/layout';
+import { KB, VARIANTS, type KeyId, type KeyRect } from '../keyboard/layout';
 import type { KeyboardState } from '../keyboard/sim';
 import type { TypingState } from '../timeline';
 import { KB_H, SCREEN_W, kbTop, keyRects } from './scene';
@@ -14,6 +14,7 @@ const LIGHT = {
   key: '#ffffff',
   pressed: '#b8bcc4',
   popup: '#ffffff',
+  pickerHi: '#d6d9df',
   label: '#000000',
   prediction: '#6c6c70',
   separator: 'rgba(0,0,0,0.16)',
@@ -25,8 +26,9 @@ const LIGHT = {
 const DARK: typeof LIGHT = {
   panel: '#1f1f1f',
   key: '#434343',
-  pressed: '#6c6c6c',
-  popup: '#5f5f5f',
+  pressed: '#5d5d5d',
+  popup: '#525252',
+  pickerHi: '#7a7a7a',
   label: '#ffffff',
   prediction: '#999999',
   separator: 'rgba(255,255,255,0.16)',
@@ -37,16 +39,30 @@ const DARK: typeof LIGHT = {
 /** Current palette; set at the start of every drawKeyboard call (rendering is synchronous). */
 let C = LIGHT;
 
-/** How long (s) the highlight / key popup stays after a press. */
-const FLASH = 0.12;
+/** How long (s) the highlight / key popup stays after a press (measured: ~4 frames at 30 fps). */
+const FLASH = 0.13;
+/** Long press: the plain popup shows first, the variant picker appears after this, s. */
+const PICKER_DELAY = 0.35;
+/** After 🌐 the space bar shows the layout name for this long, s. */
+const LAYOUT_NAME = 1.1;
 
 /** Default prediction words per keyboard language (left, centre, right). */
 const PREDICTIONS: Record<string, [string, string, string]> = {
   ru: ['Я', 'я', 'Ну'],
-  uz: ['Men', 'Salom', 'Ha'],
+  uz: ['I', 'The', 'I’m'],
 };
-/** Language marker in the corner of the space bar. */
-const SPACE_MARKER: Record<string, string> = { ru: 'ру', uz: 'uz' };
+/** Language marker in the corner of the space bar (uz = the English (US) keyboard). */
+const SPACE_MARKER: Record<string, string> = { ru: 'ру', uz: 'A' };
+const LAYOUT_TITLE: Record<string, string> = { ru: 'Русская', uz: 'English (US)' };
+
+/** A key being held for the variant picker: which key, what it will type, how far into the hold. */
+export interface LongPressState {
+  key: KeyId;
+  inserted: string;
+  /** Seconds since the finger went down. */
+  elapsed: number;
+  hold: number;
+}
 
 export function drawKeyboard(
   ctx: Ctx2D,
@@ -56,6 +72,7 @@ export function drawKeyboard(
   strings: VideoStrings,
   font: string,
   dark = false,
+  longPress: LongPressState | null = null,
 ): void {
   C = dark ? DARK : LIGHT;
   const top = kbTop(slide);
@@ -66,14 +83,17 @@ export function drawKeyboard(
 
   drawPredictions(ctx, s, top, font);
 
-  const flash = s.lastPress && t - s.lastPress.t < FLASH ? s.lastPress : null;
+  const flash = s.lastPress && t - s.lastPress.t < FLASH && !s.lastPress.longPress ? s.lastPress : null;
   const rects = keyRects(s.kb, slide);
   let popup: KeyRect | null = null;
+  let held: KeyRect | null = null;
+  const showLayoutName = s.layoutSwitchAt !== null && t - s.layoutSwitchAt < LAYOUT_NAME;
 
   for (const r of rects) {
     const isChar = r.id.startsWith('c:');
-    const pressed = flash?.key === r.id;
-    if (pressed && isChar) popup = r;
+    const pressed = flash?.key === r.id || longPress?.key === r.id;
+    if (flash?.key === r.id && isChar) popup = r;
+    if (longPress?.key === r.id) held = r;
     const cx = r.x + r.w / 2;
     const cy = r.y + r.h / 2;
 
@@ -83,7 +103,7 @@ export function drawKeyboard(
       continue;
     }
 
-    ctx.fillStyle = pressed && !isChar ? C.pressed : C.key;
+    ctx.fillStyle = pressed ? C.pressed : C.key;
     rr(ctx, r.x, r.y, r.w, r.h, KB.keyRadius);
 
     switch (r.id) {
@@ -100,6 +120,14 @@ export function drawKeyboard(
         drawReturn(ctx, cx, cy);
         continue;
       case 'space': {
+        if (showLayoutName) {
+          ctx.fillStyle = C.label;
+          ctx.font = `16px ${font}`;
+          ctx.textAlign = 'center';
+          ctx.textBaseline = 'middle';
+          ctx.fillText(LAYOUT_TITLE[s.kb.lang] ?? '', cx, cy);
+          continue;
+        }
         ctx.fillStyle = C.marker;
         ctx.font = `500 10.5px ${font}`;
         ctx.textAlign = 'right';
@@ -118,6 +146,12 @@ export function drawKeyboard(
   }
 
   if (popup && flash) drawPopup(ctx, popup, flash.inserted ?? '', font);
+  if (held && longPress) {
+    const base = held.id.slice(2);
+    const upper = s.kb.shift && s.kb.page === 'letters';
+    if (longPress.elapsed < PICKER_DELAY) drawPopup(ctx, held, upper ? base.toLocaleUpperCase() : base, font);
+    else drawPicker(ctx, held, base, longPress, upper, font);
+  }
   ctx.textAlign = 'left';
   ctx.textBaseline = 'alphabetic';
 }
@@ -159,21 +193,64 @@ function keyLabel(id: KeyId, kb: KeyboardState, strings: VideoStrings): string {
   return '';
 }
 
-/** Enlarged letter above the pressed key, like on iOS. */
+/**
+ * iOS 26 key popup (measured): a separate rounded box 51×59 pt standing 3 pt above the key,
+ * centred on it, with the typed character.
+ */
+const POPUP = { w: 51, h: 59, gap: 3.3, radius: 13 };
+
 function drawPopup(ctx: Ctx2D, r: KeyRect, ch: string, font: string): void {
-  const w = r.w * 1.5;
-  const x = r.x + r.w / 2 - w / 2;
-  const h = r.h * 2.15;
-  const y = r.y + r.h - h;
-  ctx.fillStyle = 'rgba(0,0,0,0.35)';
-  rr(ctx, x, y + 1.5, w, h, 10);
+  const x = Math.min(SCREEN_W - 3 - POPUP.w, Math.max(3, r.x + r.w / 2 - POPUP.w / 2));
+  const y = r.y - POPUP.gap - POPUP.h;
+  ctx.fillStyle = 'rgba(0,0,0,0.25)';
+  rr(ctx, x, y + 1, POPUP.w, POPUP.h, POPUP.radius);
   ctx.fillStyle = C.popup;
-  rr(ctx, x, y, w, h, 10);
+  rr(ctx, x, y, POPUP.w, POPUP.h, POPUP.radius);
   ctx.fillStyle = C.label;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.font = `34px ${font}`;
-  ctx.fillText(ch, x + w / 2, y + r.h * 0.6);
+  ctx.font = `30px ${font}`;
+  ctx.fillText(ch, x + POPUP.w / 2, y + POPUP.h / 2);
+}
+
+/**
+ * Long-press variant picker: a strip of variants above the key; the highlight slides from the
+ * key's own letter to the chosen variant just before release.
+ */
+function drawPicker(
+  ctx: Ctx2D,
+  r: KeyRect,
+  base: string,
+  lp: LongPressState,
+  upper: boolean,
+  font: string,
+): void {
+  const items = VARIANTS[base] ?? [base];
+  const target = Math.max(0, items.indexOf(lp.inserted.toLocaleLowerCase()));
+  const cell = 34;
+  const h = 46;
+  const w = items.length * cell + 8;
+  // Opens to the right of the key when there is room, otherwise to the left
+  let x = r.x + r.w / 2 - cell / 2 - 4;
+  if (x + w > SCREEN_W - 3) x = r.x + r.w / 2 + cell / 2 + 4 - w;
+  x = Math.max(3, x);
+  const y = r.y - POPUP.gap - h;
+  ctx.fillStyle = 'rgba(0,0,0,0.25)';
+  rr(ctx, x, y + 1, w, h, 14);
+  ctx.fillStyle = C.popup;
+  rr(ctx, x, y, w, h, 14);
+  // The finger slides to the variant in the second half of the picker time
+  const span = lp.hold - PICKER_DELAY;
+  const k = Math.min(1, Math.max(0, (lp.elapsed - PICKER_DELAY - span * 0.4) / (span * 0.4)));
+  const own = Math.max(0, items.indexOf(base));
+  const hi = Math.round(own + (target - own) * k);
+  ctx.fillStyle = C.pickerHi;
+  rr(ctx, x + 4 + hi * cell, y + 4, cell, h - 8, 10);
+  ctx.fillStyle = C.label;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.font = `24px ${font}`;
+  items.forEach((c, i) => ctx.fillText(upper ? c.toLocaleUpperCase() : c, x + 4 + i * cell + cell / 2, y + h / 2));
 }
 
 /** ⇧ — outline when off, filled when on, filled with a bar under it for Caps Lock. */

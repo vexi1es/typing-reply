@@ -111,33 +111,45 @@ describe('generateTimeline', () => {
 });
 
 describe('keyboard', () => {
-  it('uppercase letter goes through shift', () => {
-    expect(presses({ text: 'Hi' })).toEqual(['shift', 'c:h', 'c:i']);
+  it('auto-capitalisation: ⇧ is on at the start and after the end of a sentence', () => {
+    expect(presses({ text: 'Hi' })).toEqual(['c:h', 'c:i']);
+    // a lowercase start turns the automatic ⇧ off
+    expect(presses({ text: 'hi' })).toEqual(['shift', 'c:h', 'c:i']);
+    expect(presses({ text: 'Ok. Da', lang: 'uz' })).toEqual([
+      'c:o', 'c:k', 'to-symbols', 'c:.', 'space', 'c:d', 'c:a',
+    ]);
+  });
+
+  it('uppercase letter in the middle goes through shift', () => {
+    expect(presses({ text: 'Ok Hi' })).toEqual(['c:o', 'c:k', 'space', 'shift', 'c:h', 'c:i']);
   });
 
   it('ALL CAPS uses Caps Lock (double tap ⇧) and turns it off with a single tap', () => {
     expect(presses({ text: 'НЕТ, да', lang: 'ru' })).toEqual([
-      'shift', 'shift', 'c:н', 'c:е', 'c:т', 'to-symbols', 'c:,', 'space', 'shift', 'c:д', 'c:а',
+      'shift', 'c:н', 'c:е', 'c:т', 'to-symbols', 'c:,', 'space', 'shift', 'c:д', 'c:а',
     ]);
   });
 
   it('a single capital does not use Caps Lock', () => {
-    expect(presses({ text: 'Ок', lang: 'ru' })).toEqual(['shift', 'c:о', 'c:к']);
+    expect(presses({ text: 'Ок', lang: 'ru' })).toEqual(['c:о', 'c:к']);
   });
 
   it('another language goes through 🌐', () => {
-    expect(presses({ text: 'да', lang: 'uz' })).toEqual(['globe', 'c:д', 'c:а']);
-    expect(presses({ text: 'да', lang: 'ru' })).toEqual(['c:д', 'c:а']);
+    expect(presses({ text: 'Да', lang: 'uz' })).toEqual(['globe', 'c:д', 'c:а']);
+    expect(presses({ text: 'Да', lang: 'ru' })).toEqual(['c:д', 'c:а']);
   });
 
   it('digits and punctuation use 123 without switching layout, back to letters after a space', () => {
-    expect(presses({ text: 'в 5, ок', lang: 'ru' })).toEqual([
+    expect(presses({ text: 'В 5, ок', lang: 'ru' })).toEqual([
       'c:в', 'space', 'to-symbols', 'c:5', 'c:,', 'space', 'c:о', 'c:к',
     ]);
   });
 
   it('ё is typed from the е key, emoji from the emoji key', () => {
-    expect(presses({ text: 'ё😅', lang: 'ru' })).toEqual(['c:е', 'emoji']);
+    expect(presses({ text: 'Ё😅', lang: 'ru' })).toEqual(['c:е', 'emoji']);
+    // a long press: the release comes after the hold
+    const press = gen({ text: 'Ё', lang: 'ru' }).events.find((e) => e.type === 'press');
+    expect(press).toMatchObject({ key: 'c:е', longPress: true, hold: 0.6 });
   });
 });
 
@@ -161,14 +173,14 @@ describe('languages', () => {
     expect(langs('mañana', 'uz')).toEqual(['uz']); // ñ via long press on n
   });
 
-  it('Uzbek oʻ / gʻ use the ʻ key; ʼ and ` go there too', () => {
-    expect(presses({ text: 'oʻ', lang: 'uz' })).toEqual(['c:o', 'c:ʻ']);
-    expect(presses({ text: 'gʼ', lang: 'uz' })).toEqual(['c:g', 'c:ʻ']);
-    expect(presses({ text: "o'", lang: 'uz' })).toEqual(['c:o', 'to-symbols', "c:'"]);
+  it('Uzbek oʻ / gʻ use the apostrophe of the English keyboard; ş ç ö are long presses', () => {
+    expect(presses({ text: 'Oʻ', lang: 'uz' })).toEqual(['c:o', 'to-symbols', "c:'"]);
+    expect(presses({ text: 'Gʼ', lang: 'uz' })).toEqual(['c:g', 'to-symbols', "c:'"]);
+    expect(presses({ text: 'Işş', lang: 'uz' })).toEqual(['c:i', 'c:s', 'c:s']);
   });
 
   it('Uzbek Cyrillic letters use long press on the Russian layout', () => {
-    expect(presses({ text: 'ўқ', lang: 'ru' })).toEqual(['c:у', 'c:к']);
+    expect(presses({ text: 'Ўқ', lang: 'ru' })).toEqual(['c:у', 'c:к']);
   });
 
   it('final text is exact in every language and mode', () => {
@@ -192,8 +204,10 @@ describe('stateAt', () => {
   it('empty before typing starts, keyboard in the site language', () => {
     const s = stateAt(tl, 0);
     expect(s.graphemes).toEqual([]);
-    expect(s.kb).toEqual({ lang: 'ru', page: 'letters', shift: false, capsLock: false });
+    expect(s.kb).toEqual({ lang: 'ru', page: 'letters', shift: true, capsLock: false });
     expect(s.sentAt).toBeNull();
+    expect(s.focusAt).toBeNull();
+    expect(stateAt(tl, 1).focusAt).not.toBeNull();
   });
 
   it('full text and sent at the end', () => {

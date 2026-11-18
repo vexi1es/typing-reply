@@ -30,8 +30,40 @@ interface KeySpec {
 
 const LETTER_ROWS: Record<Lang, string[]> = {
   ru: ['йцукенгшщзх', 'фывапролджэ', 'ячсмитьбю'],
-  // Uzbek Latin: QWERTY plus the ʻ key for oʻ / gʻ (U+02BB).
-  uz: ['qwertyuiop', 'asdfghjkl', 'zxcvbnmʻ'],
+  // Uzbek is typed on the English (US) keyboard, like the user does: oʻ / gʻ via the apostrophe.
+  uz: ['qwertyuiop', 'asdfghjkl', 'zxcvbnm'],
+};
+
+/**
+ * Long-press variants shown above a key (iOS order; the first item is the key itself).
+ * A character found here is typed with a long press instead of a tap.
+ */
+export const VARIANTS: Record<string, string[]> = {
+  a: ['a', 'à', 'á', 'â', 'ä', 'æ', 'ã', 'å', 'ā'],
+  c: ['c', 'ç', 'ć', 'č'],
+  e: ['e', 'è', 'é', 'ê', 'ë', 'ē', 'ė', 'ę'],
+  g: ['g', 'ğ'],
+  i: ['i', 'î', 'ï', 'í', 'ī', 'į', 'ì', 'ı'],
+  l: ['l', 'ł'],
+  n: ['n', 'ñ', 'ń'],
+  o: ['o', 'ô', 'ö', 'ò', 'ó', 'œ', 'ø', 'ō', 'õ'],
+  s: ['s', 'ß', 'ş', 'ś', 'š'],
+  u: ['u', 'û', 'ü', 'ù', 'ú', 'ū'],
+  y: ['y', 'ÿ'],
+  z: ['z', 'ž', 'ź', 'ż'],
+  е: ['е', 'ё'],
+  // Uzbek Cyrillic on the Russian layout
+  у: ['у', 'ў'],
+  к: ['к', 'қ'],
+  г: ['г', 'ғ'],
+  х: ['х', 'ҳ'],
+  ь: ['ь', 'ъ'],
+  '?': ['?', '¿'],
+  '!': ['!', '¡'],
+  '"': ['"', '«', '»', '„', '“', '”'],
+  "'": ["'", '‘', '’', '‚'],
+  '-': ['-', '–', '—', '•'],
+  '.': ['.', '…'],
 };
 
 const CURRENCY: Record<Lang, string> = { ru: '₽', uz: '$' };

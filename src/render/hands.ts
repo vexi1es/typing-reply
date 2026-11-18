@@ -84,15 +84,21 @@ function plan(tl: Timeline): Finger[] {
   let lastThumb = 1;
 
   for (const e of tl.events) {
-    const pos = keyCenter(e.kb, e.type === 'send' ? 'send' : e.key);
+    // focus: tap the input field while the keyboard is still closed (it sits above the home bar)
+    const pos =
+      e.type === 'focus'
+        ? { x: SCREEN_W * 0.42, y: SCREEN_H - 48 }
+        : keyCenter(e.kb, e.type === 'send' ? 'send' : e.key);
     let fi = 0;
     if (fingers.length === 2) {
-      if (e.type === 'send') fi = 1;
+      if (e.type === 'send' || e.type === 'focus') fi = 1;
       else if (e.type === 'press' && e.key === 'space') fi = 1 - lastThumb; // space: alternate thumbs
       else fi = pos.x < SCREEN_W / 2 ? 0 : 1;
       if (e.type !== 'hover') lastThumb = fi;
     }
-    targets[fi]!.push({ t: e.t, pos, press: e.type !== 'hover' });
+    // A long press lands when the hold starts; the event time is the release.
+    const at = e.type === 'press' && e.hold ? e.t - e.hold : e.t;
+    targets[fi]!.push({ t: at, pos, press: e.type !== 'hover' });
   }
 
   fingers.forEach((f, i) => {

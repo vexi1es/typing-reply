@@ -5,8 +5,12 @@ import { createRng, range } from './prng';
 import { MAX_CHARS } from './limits';
 import type { Break, Mode, Timeline, TimelineEvent, TimelineOptions } from './types';
 
-/** Delay before the first key press, s. */
-export const LEAD_IN = 0.8;
+/** The finger taps the input field at this time; the keyboard then slides up. */
+export const FOCUS_AT = 0.45;
+/** Delay before the first key press, s (the keyboard has finished opening). */
+export const LEAD_IN = 1.3;
+/** How long a key is held to open the variant picker (ё, ş, ç, ö…), s. */
+export const LONG_PRESS_HOLD = 0.6;
 /** How long the video lasts after sending, s: the keyboard slides away and the message can be read. */
 export const TAIL = 2.2;
 export const DEFAULT_MAX_DURATION = 60;
@@ -69,6 +73,7 @@ export function generateTimeline(opts: TimelineOptions): Timeline {
   const sim = new KeyboardSim(KeyboardSim.langsFor(graphemes, lang));
   const pick = <T>(arr: readonly T[]): T => arr[Math.floor(rng() * arr.length)]!;
 
+  events.push({ t: FOCUS_AT, type: 'focus', kb: { ...sim.state } });
   let t = LEAD_IN;
   const breaks: Break[] = [];
   const breakAt = mode === 'breaks' ? planBreaks(graphemes) : [];
@@ -84,7 +89,13 @@ export function generateTimeline(opts: TimelineOptions): Timeline {
   };
 
   const emit = (p: Press, quick = false) => {
-    events.push({ t, type: 'press', ...p });
+    if (p.longPress) {
+      // Hold the key until the variant picker shows up, slide to the variant, release.
+      t += LONG_PRESS_HOLD;
+      events.push({ t, type: 'press', hold: LONG_PRESS_HOLD, ...p });
+    } else {
+      events.push({ t, type: 'press', ...p });
+    }
     if (quick) {
       t += range(rng, 0.08, 0.14); // double tap on ⇧
     } else if (p.effect.kind === 'insert') {

@@ -18,7 +18,7 @@ import {
   type ChatLook,
 } from './chat';
 import { drawHands } from './hands';
-import { drawKeyboard, rr } from './keyboard';
+import { drawKeyboard, rr, type LongPressState } from './keyboard';
 import { FIELD_MIN_H, FIELD_W, FIELD_X, SCREEN_H, SCREEN_W, SEND_R, fieldBottom, kbTop, sendCenter } from './scene';
 import type { Ctx2D } from './types';
 
@@ -92,8 +92,10 @@ export function renderFrame(ctx: Ctx2D, tl: Timeline, t: number, opts: RenderOpt
   ctx.clip();
   drawWallpaper(ctx, look);
 
-  // After sending, the keyboard slides down
-  const slide = s.sentAt === null ? 0 : easeOut(clamp01((t - s.sentAt - 0.25) / 0.35));
+  // The keyboard is closed until the finger taps the field, then slides up like on iOS
+  // (measured: a critically damped spring, ~90 % of the way in 0.15 s). After sending it stays open,
+  // as in Telegram.
+  const slide = s.focusAt === null ? 1 : 1 - spring(t - s.focusAt - KB_DELAY);
   ctx.font = `${MSG_FONT}px ${font}`;
 
   // Input field (grows upwards, shows the last lines)
@@ -137,7 +139,9 @@ export function renderFrame(ctx: Ctx2D, tl: Timeline, t: number, opts: RenderOpt
   rr(ctx, fx0, fTop, fx1 - fx0, fieldH, fr);
   if (tgDark) {
     drawTgDarkInputButtons(ctx, fBottom - fr, row.attachX, row.sendX, typing.length > 0);
-    drawStickerIcon(ctx, fx1 - 20, fBottom - fr);
+    // Empty field: sticker button; with text: emoji button
+    if (typing.length) drawEmojiOutline(ctx, fx1 - 20, fBottom - fr);
+    else drawStickerIcon(ctx, fx1 - 20, fBottom - fr);
   }
 
   ctx.textBaseline = 'middle';
@@ -152,8 +156,9 @@ export function renderFrame(ctx: Ctx2D, tl: Timeline, t: number, opts: RenderOpt
   }
 
   // Caret: solid while typing, blinks during pauses
-  const sinceKey = s.lastPress ? t - s.lastPress.t : Infinity;
-  if (s.sentAt === null && (sinceKey < 0.5 || Math.floor(t * 1.8) % 2 === 0)) {
+  // Caret: appears when the field is tapped, solid while typing, blinks during pauses
+  const sinceKey = s.lastPress ? t - s.lastPress.t : s.focusAt !== null ? t - s.focusAt : Infinity;
+  if (s.focusAt !== null && (sinceKey < 0.5 || Math.floor(t * 1.8) % 2 === 0)) {
     const last = lines[lines.length - 1] ?? '';
     const cx = textX + (last ? ctx.measureText(last).width + 1 : 2);
     const cy = lineY(Math.max(0, lines.length - 1));
@@ -170,7 +175,8 @@ export function renderFrame(ctx: Ctx2D, tl: Timeline, t: number, opts: RenderOpt
       ctx.arc(sc.x, sc.y, SEND_R, 0, Math.PI * 2);
       ctx.fill();
     }
-    drawArrowUp(ctx, sc.x, sc.y);
+    if (tgDark) drawPlane(ctx, sc.x, sc.y);
+    else drawArrowUp(ctx, sc.x, sc.y);
   }
 
   // Chat: laid out bottom-up from the input field
@@ -235,7 +241,7 @@ export function renderFrame(ctx: Ctx2D, tl: Timeline, t: number, opts: RenderOpt
   drawHeader(ctx, look, strings, font, clockAt(look, t));
 
   // Keyboard
-  if (slide < 1) drawKeyboard(ctx, s, t, slide, strings, font, C.dark);
+  if (slide < 1) drawKeyboard(ctx, s, t, slide, strings, font, C.dark, longPressAt(tl, t));
 
   ctx.restore(); // drop the screen clip
 
@@ -243,6 +249,54 @@ export function renderFrame(ctx: Ctx2D, tl: Timeline, t: number, opts: RenderOpt
   drawExhale(ctx, tl, t, (H - oy) / S);
   ctx.restore();
   ctx.textBaseline = 'alphabetic';
+}
+
+/** A key being held for the variant picker at time t (the press event is its release). */
+function longPressAt(tl: Timeline, t: number): LongPressState | null {
+  for (const e of tl.events) {
+    if (e.type !== 'press' || !e.hold) continue;
+    if (t >= e.t - e.hold && t < e.t && e.effect.kind === 'insert') {
+      return { key: e.key, inserted: e.effect.text, elapsed: t - (e.t - e.hold), hold: e.hold };
+    }
+    if (e.t - e.hold > t) break;
+  }
+  return null;
+}
+
+/** Telegram's send arrow: a paper plane pointing up-right. */
+function drawPlane(ctx: Ctx2D, x: number, y: number): void {
+  ctx.fillStyle = '#ffffff';
+  ctx.beginPath();
+  ctx.moveTo(x + 8.5, y - 8);
+  ctx.lineTo(x - 9, y - 0.8);
+  ctx.lineTo(x - 2.2, y + 1.6);
+  ctx.lineTo(x + 0.4, y + 8.6);
+  ctx.closePath();
+  ctx.fill();
+  ctx.strokeStyle = '#3f93f0';
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.moveTo(x - 2.2, y + 1.6);
+  ctx.lineTo(x + 8.5, y - 8);
+  ctx.stroke();
+}
+
+/** Outline smiley (emoji button in the Telegram field while typing). */
+function drawEmojiOutline(ctx: Ctx2D, x: number, y: number): void {
+  ctx.strokeStyle = '#8e8e8e';
+  ctx.fillStyle = '#8e8e8e';
+  ctx.lineWidth = 1.7;
+  ctx.beginPath();
+  ctx.arc(x, y, 9.5, 0, Math.PI * 2);
+  ctx.stroke();
+  for (const dx of [-3.3, 3.3]) {
+    ctx.beginPath();
+    ctx.ellipse(x + dx, y - 2.6, 1.1, 1.6, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.beginPath();
+  ctx.arc(x, y + 0.5, 5, 0.18 * Math.PI, 0.82 * Math.PI);
+  ctx.stroke();
 }
 
 function drawArrowUp(ctx: Ctx2D, x: number, y: number): void {
@@ -260,8 +314,10 @@ function drawArrowUp(ctx: Ctx2D, x: number, y: number): void {
 }
 
 const lerp = (a: number, b: number, k: number) => a + (b - a) * k;
-const clamp01 = (x: number) => Math.min(1, Math.max(0, x));
-const easeOut = (p: number) => 1 - (1 - p) ** 3;
+/** Delay between the tap and the keyboard starting to move, s. */
+const KB_DELAY = 0.08;
+/** Critically damped spring, 0 → 1 (fitted to the screen recording: ω = 26). */
+const spring = (x: number) => (x <= 0 ? 0 : 1 - (1 + 26 * x) * Math.exp(-26 * x));
 
 const wrapCache = new Map<string, string[]>();
 
