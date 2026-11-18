@@ -3,7 +3,7 @@ import { loadFonts } from './fonts';
 import type { Lang } from './i18n';
 import type { ChatTheme } from './render/chat';
 import { generateTimeline, type Mode } from './timeline';
-import { VIDEO } from './videoConfig';
+import { VIDEO, VIDEO_FALLBACK } from './videoConfig';
 
 /**
  * Everything heavy for the video (timeline, renderer, Mediabunny) lives in this module.
@@ -44,7 +44,16 @@ export async function makeVideo(
   const look = { theme: p.theme, name: p.name, avatar, startTime, voiceClock: hhmm(ago), battery: p.battery };
 
   try {
-    const blob = await encodeMp4(timeline, { ...VIDEO, look, onProgress, signal });
+    let blob: Blob;
+    try {
+      blob = await encodeMp4(timeline, { ...VIDEO, look, onProgress, signal });
+    } catch (err) {
+      if (err instanceof DOMException && err.name === 'AbortError') throw err;
+      // Some encoders refuse 720×1280: try once more at a smaller size before giving up.
+      console.warn('Encoding at 720×1280 failed, retrying smaller', err);
+      onProgress(0);
+      blob = await encodeMp4(timeline, { ...VIDEO_FALLBACK, look, onProgress, signal });
+    }
     return { blob, duration: timeline.duration };
   } finally {
     avatar?.close();

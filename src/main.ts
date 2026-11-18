@@ -259,7 +259,10 @@ const shareBtn = $<HTMLButtonElement>('share');
 const shareHint = $<HTMLParagraphElement>('share-hint');
 const secondaryBtn = $<HTMLButtonElement>('sheet-secondary');
 
-type SheetState = { kind: 'rendering'; progress: number } | { kind: 'ready' } | { kind: 'error'; unsupported: boolean };
+type SheetState =
+  | { kind: 'rendering'; progress: number }
+  | { kind: 'ready' }
+  | { kind: 'error'; unsupported: boolean; detail: string };
 let sheetState: SheetState | null = null;
 
 function renderSheet() {
@@ -274,7 +277,12 @@ function renderSheet() {
   previewEl.hidden = !isReady;
   if (isRendering) setProgress(st.progress);
 
-  const note = isRendering ? ui.rendering : st.kind === 'error' && st.unsupported ? ui.unsupported : '';
+  // On failure the technical reason is shown too, so a screenshot is enough to find the cause.
+  const note = isRendering
+    ? ui.rendering
+    : st.kind === 'error'
+      ? [st.unsupported ? ui.unsupported : '', st.detail].filter(Boolean).join(NL + NL)
+      : '';
   sheetNote.textContent = note;
   sheetNote.hidden = !note;
 
@@ -359,7 +367,7 @@ form.addEventListener('submit', async (e) => {
     if (err instanceof DOMException && err.name === 'AbortError') return;
     console.error(err);
     if (sheet.open) {
-      sheetState = { kind: 'error', unsupported: err instanceof UnsupportedError };
+      sheetState = { kind: 'error', unsupported: err instanceof UnsupportedError, detail: describeError(err) };
       renderSheet();
     }
   } finally {
@@ -368,6 +376,15 @@ form.addEventListener('submit', async (e) => {
     updateLimit();
   }
 });
+
+function describeError(err: unknown): string {
+  const e = err as { name?: string; message?: string; stack?: string } | null;
+  const head = e?.name || e?.message ? `${e.name ?? 'Error'}: ${e.message ?? ''}` : String(err);
+  const where = e?.stack?.split(NL).find((l) => l.includes('.js'))?.trim() ?? '';
+  const ios = navigator.userAgent.match(/OS [\d_]+|Version\/[\d.]+/g)?.join(' ') ?? '';
+  return [head, where, ios].filter(Boolean).join(NL).slice(0, 400);
+}
+const NL = String.fromCharCode(10);
 
 // Separate button: share must be called from a user gesture.
 shareBtn.addEventListener('click', async () => {
