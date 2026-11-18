@@ -1,9 +1,9 @@
 import './style.css';
-import { loadWebAnalytics, setCommonProps, track, trackErrors } from './analytics';
 import { renderVoiceRain } from './background';
-import { chromeIntentUrl, isAndroid, isInAppBrowser } from './inapp';
 import { UnsupportedError } from './encode/errors';
 import { detectLang, isLang, UI_STRINGS, type Lang, type UiKey } from './i18n';
+import { initials } from './render/chat';
+import { CHAT_THEMES, type ChatTheme } from './render/chat';
 import { canShareFile, shareOrDownload } from './share/share';
 import { splitGraphemes } from './timeline/graphemes';
 import { MAX_CHARS, MAX_CHARS_ANY } from './timeline/limits';
@@ -16,7 +16,7 @@ import type { Mode } from './timeline/types';
 let videoModule: Promise<typeof import('./video')> | null = null;
 const loadVideoModule = () => {
   videoModule ??= import('./video').catch((err) => {
-    videoModule = null; // network hiccup — retry on the next click
+    videoModule = null;
     throw err;
   });
   return videoModule;
@@ -26,75 +26,35 @@ const prefetchVideo = () => {
   void import('./fonts').then((m) => m.loadFonts());
 };
 
-const LANG_KEY = 'pjt.lang';
+/** Everything the user set up is remembered on the phone. */
+const KEY = {
+  lang: 'pjt.lang',
+  name: 'pjt.name',
+  avatar: 'pjt.avatar',
+  voice: 'pjt.voice',
+  theme: 'pjt.theme',
+  mode: 'pjt.mode',
+};
 const storage = {
   get: (k: string) => {
     try {
       return localStorage.getItem(k);
     } catch {
-      return null; // private mode / blocked storage — just don't remember
+      return null;
     }
   },
-  set: (k: string, v: string) => {
+  set: (k: string, v: string | null) => {
     try {
-      localStorage.setItem(k, v);
+      if (v === null) localStorage.removeItem(k);
+      else localStorage.setItem(k, v);
     } catch {
-      /* see above */
+      /* private mode / quota — just don't remember */
     }
   },
 };
 
-let lang: Lang = detectLang(location.search, navigator.languages ?? [navigator.language], storage.get(LANG_KEY));
+let lang: Lang = detectLang(location.search, navigator.languages ?? [navigator.language], storage.get(KEY.lang));
 let ui = UI_STRINGS[lang];
-
-const canonical = document.createElement('link');
-canonical.rel = 'canonical';
-document.head.appendChild(canonical);
-
-/** Translates the page in place: index.html is authored in English, texts are marked with data-i18n. */
-function applyLang(next: Lang) {
-  lang = next;
-  ui = UI_STRINGS[lang];
-  document.documentElement.lang = lang;
-  document.title = ui.metaTitle;
-  document.querySelector('meta[name="description"]')?.setAttribute('content', ui.metaDescription);
-  // Canonical: the main URL, or its own ?lang=xx URL (listed via hreflang in index.html).
-  const inUrl = new URLSearchParams(location.search).get('lang');
-  canonical.href = `https://pleasejusttext.me/${inUrl === lang ? `?lang=${lang}` : ''}`;
-  for (const el of document.querySelectorAll<HTMLElement>('[data-i18n]')) {
-    el.textContent = ui[el.dataset.i18n as UiKey];
-  }
-  for (const el of document.querySelectorAll<HTMLTextAreaElement>('[data-i18n-placeholder]')) {
-    el.placeholder = ui[el.dataset.i18nPlaceholder as UiKey];
-  }
-  for (const el of document.querySelectorAll<HTMLElement>('[data-i18n-aria]')) {
-    el.setAttribute('aria-label', ui[el.dataset.i18nAria as UiKey]);
-  }
-  const code = document.getElementById('lang-code');
-  if (code) code.textContent = lang.toUpperCase();
-  setCommonProps({ lang });
-}
-applyLang(lang);
-
-// Not at startup: page first, heavy stuff later. Focusing the input is a strong hint a video is coming.
-if ('requestIdleCallback' in window) requestIdleCallback(prefetchVideo, { timeout: 4000 });
-else setTimeout(prefetchVideo, 2500);
-renderVoiceRain(document.getElementById('voice-rain')!);
-
-trackErrors();
-loadWebAnalytics(import.meta.env.VITE_CF_BEACON_TOKEN);
-track('view');
-
-// Social app in-app browser: suggest opening a real browser (on Android, a direct Open in Chrome button).
-if (isInAppBrowser(navigator.userAgent)) {
-  document.getElementById('inapp')!.hidden = false;
-  if (isAndroid(navigator.userAgent)) {
-    const btn = document.getElementById('open-chrome') as HTMLAnchorElement;
-    btn.href = chromeIntentUrl(location.href);
-    btn.hidden = false;
-  }
-}
-document.querySelector('.why')?.addEventListener('click', () => track('why_click'));
 
 const $ = <T extends HTMLElement>(id: string) => document.getElementById(id) as T;
 const form = $<HTMLFormElement>('form');
@@ -103,7 +63,164 @@ const modeEl = $<HTMLSelectElement>('mode');
 const counterEl = $<HTMLSpanElement>('counter');
 const limitHintEl = $<HTMLParagraphElement>('limit-hint');
 const renderBtn = $<HTMLButtonElement>('render');
-const langEl = $<HTMLSelectElement>('lang');
+const nameEl = $<HTMLInputElement>('name');
+const avatarInput = $<HTMLInputElement>('avatar-input');
+const avatarImg = $<HTMLImageElement>('avatar-img');
+const avatarInitials = $<HTMLSpanElement>('avatar-initials');
+const avatarPlus = $<HTMLSpanElement>('avatar-plus');
+const avatarRemove = $<HTMLButtonElement>('avatar-remove');
+const voiceEl = $<HTMLInputElement>('voice');
+const voiceValue = $<HTMLElement>('voice-value');
+const voiceHint = $<HTMLParagraphElement>('voice-hint');
+
+/** Translates the page in place: texts are marked with data-i18n. */
+function applyLang(next: Lang) {
+  lang = next;
+  ui = UI_STRINGS[lang];
+  document.documentElement.lang = lang;
+  document.title = ui.metaTitle;
+  for (const el of document.querySelectorAll<HTMLElement>('[data-i18n]')) {
+    el.textContent = ui[el.dataset.i18n as UiKey];
+  }
+  for (const el of document.querySelectorAll<HTMLInputElement>('[data-i18n-placeholder]')) {
+    el.placeholder = ui[el.dataset.i18nPlaceholder as UiKey];
+  }
+  for (const el of document.querySelectorAll<HTMLElement>('[data-i18n-aria]')) {
+    el.setAttribute('aria-label', ui[el.dataset.i18nAria as UiKey]);
+  }
+  for (const b of document.querySelectorAll<HTMLButtonElement>('[data-lang]')) {
+    b.setAttribute('aria-checked', String(b.dataset.lang === lang));
+  }
+}
+applyLang(lang);
+
+for (const b of document.querySelectorAll<HTMLButtonElement>('[data-lang]')) {
+  b.addEventListener('click', () => {
+    const next = b.dataset.lang;
+    if (!isLang(next) || next === lang) return;
+    storage.set(KEY.lang, next);
+    applyLang(next);
+    updateLimit();
+    renderSheet();
+  });
+}
+
+if ('requestIdleCallback' in window) requestIdleCallback(prefetchVideo, { timeout: 4000 });
+else setTimeout(prefetchVideo, 2500);
+renderVoiceRain($('voice-rain'));
+
+// ——— Contact: name, photo, voice message length ———
+
+let avatar: string | null = storage.get(KEY.avatar);
+nameEl.value = storage.get(KEY.name) ?? '';
+
+function updateAvatar() {
+  const ini = initials(nameEl.value);
+  avatarImg.hidden = !avatar;
+  if (avatar) avatarImg.src = avatar;
+  avatarInitials.hidden = !!avatar || !ini;
+  avatarInitials.textContent = ini;
+  avatarPlus.hidden = !!avatar || !!ini;
+  avatarRemove.hidden = !avatar;
+}
+updateAvatar();
+
+nameEl.addEventListener('input', () => {
+  storage.set(KEY.name, nameEl.value);
+  updateAvatar();
+});
+
+avatarInput.addEventListener('change', async () => {
+  const file = avatarInput.files?.[0];
+  avatarInput.value = '';
+  if (!file) return;
+  try {
+    avatar = await squareThumb(file, 320);
+    storage.set(KEY.avatar, avatar);
+    updateAvatar();
+  } catch (err) {
+    console.error(err);
+  }
+});
+avatarRemove.addEventListener('click', () => {
+  avatar = null;
+  storage.set(KEY.avatar, null);
+  updateAvatar();
+});
+
+/** Centre-crops the photo to a square and shrinks it: small enough for localStorage, sharp in the video. */
+async function squareThumb(file: Blob, size: number): Promise<string> {
+  const bmp = await createImageBitmap(file);
+  const side = Math.min(bmp.width, bmp.height);
+  const c = document.createElement('canvas');
+  c.width = c.height = size;
+  c.getContext('2d')!.drawImage(bmp, (bmp.width - side) / 2, (bmp.height - side) / 2, side, side, 0, 0, size, size);
+  bmp.close();
+  return c.toDataURL('image/jpeg', 0.86);
+}
+
+const savedVoice = Number(storage.get(KEY.voice));
+if (savedVoice >= 3 && savedVoice <= 600) voiceEl.value = String(savedVoice);
+function updateVoice() {
+  const s = Number(voiceEl.value);
+  voiceValue.textContent = `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  voiceHint.hidden = s <= 60;
+  voiceEl.style.setProperty('--fill', `${((s - 3) / (600 - 3)) * 100}%`);
+}
+voiceEl.addEventListener('input', () => {
+  storage.set(KEY.voice, voiceEl.value);
+  updateVoice();
+});
+updateVoice();
+
+// ——— Look ———
+
+const themeInputs = [...document.querySelectorAll<HTMLInputElement>('input[name="theme"]')];
+const savedTheme = storage.get(KEY.theme);
+for (const r of themeInputs) {
+  if (r.value === savedTheme && (CHAT_THEMES as readonly string[]).includes(savedTheme)) r.checked = true;
+  r.addEventListener('change', () => storage.set(KEY.theme, r.value));
+}
+const currentTheme = () => (themeInputs.find((r) => r.checked)?.value ?? 'telegram-dark') as ChatTheme;
+
+// ——— Reply text and limits ———
+
+const savedMode = storage.get(KEY.mode);
+if (savedMode && savedMode in MAX_CHARS) modeEl.value = savedMode;
+
+let current: { blob: Blob; url: string } | null = null;
+let rendering = false;
+let overLimit = false;
+let abort: AbortController | null = null;
+
+/**
+ * Limits count graphemes, not UTF-16 units. The global maximum is enforced by truncation;
+ * the per-mode limit (grandpa) is only highlighted, so switching modes back doesn't lose text.
+ */
+function updateLimit() {
+  let g = splitGraphemes(textEl.value);
+  if (g.length > MAX_CHARS_ANY) {
+    g = g.slice(0, MAX_CHARS_ANY);
+    textEl.value = g.join('');
+  }
+  const limit = MAX_CHARS[modeEl.value as Mode];
+  overLimit = g.length > limit;
+  counterEl.textContent = `${g.length}/${limit}`;
+  counterEl.classList.toggle('over', overLimit);
+  limitHintEl.hidden = !overLimit;
+  const tooLong = modeEl.value === 'breaks' ? ui.breaksTooLong : ui.grandpaTooLong;
+  limitHintEl.textContent = overLimit ? tooLong.replace('{n}', String(limit)) : '';
+  renderBtn.disabled = rendering || overLimit;
+}
+textEl.addEventListener('input', updateLimit);
+textEl.addEventListener('focus', prefetchVideo, { once: true });
+modeEl.addEventListener('change', () => {
+  storage.set(KEY.mode, modeEl.value);
+  updateLimit();
+});
+updateLimit();
+
+// ——— Result sheet: rendering (progress + Cancel) → ready (video + Send) | error ———
 
 const sheet = $<HTMLDialogElement>('sheet');
 const sheetTitle = $<HTMLHeadingElement>('sheet-title');
@@ -117,43 +234,6 @@ const previewEl = $<HTMLVideoElement>('preview');
 const shareBtn = $<HTMLButtonElement>('share');
 const shareHint = $<HTMLParagraphElement>('share-hint');
 const secondaryBtn = $<HTMLButtonElement>('sheet-secondary');
-
-let current: { blob: Blob; url: string; mode: Mode } | null = null;
-let rendering = false;
-let overLimit = false;
-let abort: AbortController | null = null;
-
-/**
- * Limits count graphemes, not UTF-16 units (maxlength would count an emoji as 2–11 chars).
- * The global maximum is enforced by truncation; the per-mode limit (grandpa) is only highlighted,
- * so switching modes back doesn't lose text.
- */
-function updateLimit() {
-  let g = splitGraphemes(textEl.value);
-  if (g.length > MAX_CHARS_ANY) {
-    g = g.slice(0, MAX_CHARS_ANY);
-    textEl.value = g.join('');
-  }
-  const limit = MAX_CHARS[modeEl.value as Mode];
-  const wasOver = overLimit;
-  overLimit = g.length > limit;
-  if (overLimit && !wasOver) track('limit_hit', { mode: modeEl.value, chars: g.length });
-  counterEl.textContent = `${g.length}/${limit}`;
-  counterEl.classList.toggle('over', overLimit);
-  limitHintEl.hidden = !overLimit;
-  const tooLong = modeEl.value === 'breaks' ? ui.breaksTooLong : ui.grandpaTooLong;
-  limitHintEl.textContent = overLimit ? tooLong.replace('{n}', String(limit)) : '';
-  renderBtn.disabled = rendering || overLimit;
-}
-textEl.addEventListener('input', updateLimit);
-textEl.addEventListener('focus', prefetchVideo, { once: true });
-modeEl.addEventListener('change', () => {
-  track('mode_change', { mode: modeEl.value });
-  updateLimit();
-});
-updateLimit();
-
-// ——— Result sheet: rendering (progress + Cancel) → ready (video + Send) | error ———
 
 type SheetState = { kind: 'rendering'; progress: number } | { kind: 'ready' } | { kind: 'error'; unsupported: boolean };
 let sheetState: SheetState | null = null;
@@ -186,7 +266,7 @@ function renderSheet() {
 let lastPct = -1;
 function setProgress(fraction: number) {
   const pct = Math.round(fraction * 100);
-  if (pct === lastPct) return; // onProgress fires on every frame
+  if (pct === lastPct) return;
   lastPct = pct;
   sheetPct.textContent = `${pct}%`;
   sheetBar.style.width = `${pct}%`;
@@ -215,23 +295,6 @@ secondaryBtn.addEventListener('click', () => {
   if (makeAnother) textEl.focus();
 });
 
-// Language switcher: translate without reloading (text, mode and the finished video stay),
-// remember the choice and put ?lang= in the URL so reloads and shared links keep the language.
-langEl.value = lang;
-langEl.addEventListener('change', () => {
-  const next = langEl.value;
-  if (!isLang(next) || next === lang) return;
-  const prev = lang;
-  storage.set(LANG_KEY, next);
-  const url = new URL(location.href);
-  url.searchParams.set('lang', next);
-  history.replaceState(null, '', url);
-  applyLang(next);
-  updateLimit();
-  renderSheet();
-  track('lang_change', { result: prev });
-});
-
 form.addEventListener('submit', async (e) => {
   e.preventDefault();
   const text = textEl.value.trim();
@@ -243,40 +306,35 @@ form.addEventListener('submit', async (e) => {
   abort = controller;
   openSheet({ kind: 'rendering', progress: 0 });
 
-  const mode = modeEl.value as Mode;
-  const chars = splitGraphemes(text).length;
-  const started = performance.now();
-  track('render_start', { mode, chars });
-
   try {
     const { makeVideo } = await loadVideoModule();
-    const { blob, duration } = await makeVideo(text, lang, mode, setProgress, controller.signal);
+    const { blob } = await makeVideo(
+      {
+        text,
+        lang,
+        mode: modeEl.value as Mode,
+        theme: currentTheme(),
+        name: nameEl.value.trim() || (lang === 'uz' ? 'Doʻst' : 'Друг'),
+        avatar,
+        voiceSeconds: Number(voiceEl.value),
+      },
+      setProgress,
+      controller.signal,
+    );
 
     if (current) URL.revokeObjectURL(current.url);
-    current = { blob, url: URL.createObjectURL(blob), mode };
+    current = { blob, url: URL.createObjectURL(blob) };
     previewEl.src = current.url;
-    track('render_done', {
-      mode,
-      chars,
-      ms: Math.round(performance.now() - started),
-      sec: Math.round(duration),
-      kb: Math.round(blob.size / 1024),
-    });
     if (sheet.open) {
       sheetState = { kind: 'ready' };
       renderSheet();
-      void previewEl.play().catch(() => {}); // muted autoplay is allowed, but just in case
+      void previewEl.play().catch(() => {});
     }
   } catch (err) {
-    if (err instanceof DOMException && err.name === 'AbortError') {
-      track('render_cancel', { mode, chars, ms: Math.round(performance.now() - started) });
-      return;
-    }
+    if (err instanceof DOMException && err.name === 'AbortError') return;
     console.error(err);
-    const unsupported = err instanceof UnsupportedError;
-    track('render_fail', { mode, chars, result: unsupported ? 'unsupported' : 'error' });
     if (sheet.open) {
-      sheetState = { kind: 'error', unsupported };
+      sheetState = { kind: 'error', unsupported: err instanceof UnsupportedError };
       renderSheet();
     }
   } finally {
@@ -289,8 +347,10 @@ form.addEventListener('submit', async (e) => {
 // Separate button: share must be called from a user gesture.
 shareBtn.addEventListener('click', async () => {
   if (!current) return;
-  const { mode } = current;
-  track('share_click', { mode });
-  const result = await shareOrDownload(current.blob, 'reply.mp4');
-  track('share_result', { mode, result });
+  await shareOrDownload(current.blob, 'reply.mp4');
 });
+
+// Offline: the service worker caches the whole app after the first visit (production build only).
+if ('serviceWorker' in navigator && import.meta.env.PROD) {
+  addEventListener('load', () => void navigator.serviceWorker.register('/sw.js').catch(console.error));
+}

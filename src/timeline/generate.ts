@@ -7,13 +7,8 @@ import type { Break, Mode, Timeline, TimelineEvent, TimelineOptions } from './ty
 
 /** Delay before the first key press, s. */
 export const LEAD_IN = 0.8;
-/**
- * How long the video lasts after sending, s: ~1.4 s to read the sent message
- * plus the end card (END_CARD) with the site link.
- */
-export const TAIL = 2.6;
-/** Duration of the “Make your own → pleasejusttext.me” end card, s (part of TAIL). */
-export const END_CARD = 1.2;
+/** How long the video lasts after sending, s: the keyboard slides away and the message can be read. */
+export const TAIL = 2.2;
 export const DEFAULT_MAX_DURATION = 60;
 
 type Span = [number, number];

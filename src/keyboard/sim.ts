@@ -29,6 +29,14 @@ const PAGES: Page[] = ['letters', 'symbols', 'symbols2'];
 const ALIASES: Record<string, string> = {
   ё: 'е',
   ъ: 'ь',
+  // Uzbek Cyrillic letters: long press on the nearest Russian key.
+  ў: 'у',
+  қ: 'к',
+  ғ: 'г',
+  ҳ: 'х',
+  // Uzbek apostrophes: all go to the ʻ key.
+  ʼ: 'ʻ',
+  '`': 'ʻ',
   '¿': '?',
   '¡': '!',
   '«': '"',

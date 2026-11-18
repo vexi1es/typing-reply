@@ -29,13 +29,12 @@ interface KeySpec {
 }
 
 const LETTER_ROWS: Record<Lang, string[]> = {
-  en: ['qwertyuiop', 'asdfghjkl', 'zxcvbnm'],
   ru: ['йцукенгшщзх', 'фывапролджэ', 'ячсмитьбю'],
-  es: ['qwertyuiop', 'asdfghjklñ', 'zxcvbnm'],
-  fr: ['azertyuiop', 'qsdfghjklm', "wxcvbn'"],
+  // Uzbek Latin: QWERTY plus the ʻ key for oʻ / gʻ (U+02BB).
+  uz: ['qwertyuiop', 'asdfghjkl', 'zxcvbnmʻ'],
 };
 
-const CURRENCY: Record<Lang, string> = { en: '$', ru: '₽', es: '€', fr: '€' };
+const CURRENCY: Record<Lang, string> = { ru: '₽', uz: '$' };
 
 const chars = (s: string, w = 1): KeySpec[] => Array.from(s, (c) => ({ id: charKey(c), w }));
 

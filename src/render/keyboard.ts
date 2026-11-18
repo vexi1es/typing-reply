@@ -5,7 +5,7 @@ import type { TypingState } from '../timeline';
 import { KB_H, SCREEN_W, kbTop, keyRects } from './scene';
 import type { Ctx2D } from './types';
 
-const C = {
+const LIGHT = {
   bg: '#d1d4db',
   key: '#ffffff',
   special: '#abb1bb',
@@ -14,6 +14,20 @@ const C = {
   label: '#000000',
   shadow: '#898a8d',
 };
+
+/** iOS dark keyboard. */
+const DARK: typeof LIGHT = {
+  bg: '#262628',
+  key: '#6b6b6e',
+  special: '#464648',
+  pressed: '#464648',
+  pressedSpecial: '#6b6b6e',
+  label: '#ffffff',
+  shadow: '#0e0e0f',
+};
+
+/** Current palette; set at the start of every drawKeyboard call (rendering is synchronous). */
+let C = LIGHT;
 
 /** How long (s) the highlight / key popup stays after a press. */
 const FLASH = 0.12;
@@ -33,7 +47,9 @@ export function drawKeyboard(
   slide: number,
   strings: VideoStrings,
   font: string,
+  dark = false,
 ): void {
+  C = dark ? DARK : LIGHT;
   const top = kbTop(slide);
   ctx.fillStyle = C.bg;
   ctx.fillRect(0, top, SCREEN_W, KB_H);

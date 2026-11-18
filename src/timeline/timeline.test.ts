@@ -4,7 +4,7 @@ import { KeyboardSim } from '../keyboard/sim';
 import { generateTimeline, MAX_CHARS, splitGraphemes, stateAt, TAIL, type Mode, type TimelineOptions } from '.';
 
 const gen = (o: Partial<TimelineOptions> & { text: string }) =>
-  generateTimeline({ mode: 'normal', seed: 1, lang: 'en', ...o });
+  generateTimeline({ mode: 'normal', seed: 1, lang: 'uz', ...o });
 
 const presses = (o: Parameters<typeof gen>[0]) =>
   gen(o).events.flatMap((e) => (e.type === 'press' ? [e.key] : []));
@@ -126,7 +126,7 @@ describe('keyboard', () => {
   });
 
   it('another language goes through 🌐', () => {
-    expect(presses({ text: 'да', lang: 'en' })).toEqual(['globe', 'c:д', 'c:а']);
+    expect(presses({ text: 'да', lang: 'uz' })).toEqual(['globe', 'c:д', 'c:а']);
     expect(presses({ text: 'да', lang: 'ru' })).toEqual(['c:д', 'c:а']);
   });
 
@@ -142,50 +142,39 @@ describe('keyboard', () => {
 });
 
 describe('languages', () => {
-  it('detectLang: supported browser language, else en; ?lang overrides', () => {
+  it('detectLang: supported browser language, else ru; ?lang overrides', () => {
     expect(detectLang('', ['ru-RU', 'en'])).toBe('ru');
-    expect(detectLang('', ['es-MX'])).toBe('es');
-    expect(detectLang('', ['fr'])).toBe('fr');
-    expect(detectLang('', ['de-DE', 'ru'])).toBe('en');
-    expect(detectLang('', [])).toBe('en');
-    expect(detectLang('?lang=fr', ['ru'])).toBe('fr');
-    expect(detectLang('?lang=xx', ['es'])).toBe('es');
-    // the switcher’s saved choice beats the browser but loses to ?lang
-    expect(detectLang('', ['en-US'], 'ru')).toBe('ru');
-    expect(detectLang('?lang=fr', ['en-US'], 'ru')).toBe('fr');
-    expect(detectLang('', ['es'], 'garbage')).toBe('es');
+    expect(detectLang('', ['uz-UZ'])).toBe('uz');
+    expect(detectLang('', ['de-DE', 'uz'])).toBe('ru');
+    expect(detectLang('', [])).toBe('ru');
+    expect(detectLang('?lang=uz', ['ru'])).toBe('uz');
+    // the saved choice beats the browser but loses to ?lang
+    expect(detectLang('', ['ru'], 'uz')).toBe('uz');
+    expect(detectLang('?lang=ru', ['ru'], 'uz')).toBe('ru');
   });
 
   it('enabled layouts: site language + those needed for the text', () => {
     const langs = (text: string, site: Parameters<typeof KeyboardSim.langsFor>[1]) =>
       KeyboardSim.langsFor(splitGraphemes(text), site);
-    expect(langs('hola, ¿qué tal?', 'es')).toEqual(['es']);
-    expect(langs('ok', 'ru')).toEqual(['ru', 'en']);
-    expect(langs('ok', 'fr')).toEqual(['fr']); // Latin letters exist on AZERTY
-    expect(langs('привет', 'es')).toEqual(['es', 'ru']);
-    expect(langs('mañana', 'en')).toEqual(['en']); // ñ via long press on n
+    expect(langs('ok', 'ru')).toEqual(['ru', 'uz']);
+    expect(langs('привет', 'uz')).toEqual(['uz', 'ru']);
+    expect(langs('mañana', 'uz')).toEqual(['uz']); // ñ via long press on n
   });
 
-  it('ñ is its own key on the Spanish layout, a long press on n on the English one', () => {
-    expect(presses({ text: 'ñ', lang: 'es' })).toEqual(['c:ñ']);
-    expect(presses({ text: 'ñ', lang: 'en' })).toEqual(['c:n']);
+  it('Uzbek oʻ / gʻ use the ʻ key; ʼ and ` go there too', () => {
+    expect(presses({ text: 'oʻ', lang: 'uz' })).toEqual(['c:o', 'c:ʻ']);
+    expect(presses({ text: 'gʼ', lang: 'uz' })).toEqual(['c:g', 'c:ʻ']);
+    expect(presses({ text: "o'", lang: 'uz' })).toEqual(['c:o', 'to-symbols', "c:'"]);
   });
 
-  it('¿ ¡ « » use long press on punctuation, not the emoji key', () => {
-    expect(presses({ text: '¿', lang: 'es' })).toEqual(['to-symbols', 'c:?']);
-    expect(presses({ text: '«»', lang: 'fr' })).toEqual(['to-symbols', 'c:"', 'c:"']);
-  });
-
-  it('apostrophe is on the letters page of the French layout', () => {
-    expect(presses({ text: "l'", lang: 'fr' })).toEqual(['c:l', "c:'"]);
+  it('Uzbek Cyrillic letters use long press on the Russian layout', () => {
+    expect(presses({ text: 'ўқ', lang: 'ru' })).toEqual(['c:у', 'c:к']);
   });
 
   it('final text is exact in every language and mode', () => {
     const texts = {
-      es: '¡Hola! ¿Mañana a las 5? Vale, señor 👍',
-      fr: "Salut ! C'est « génial », à demain ça va ? Œuvre",
-      en: 'Hey, привет! ¿Qué?',
-      ru: 'Ок, see you в 5:30 €',
+      uz: 'Salom! Ertaga soat 5 da koʻrishamiz, gʻalaba 👍 привет',
+      ru: 'Ок, see you в 5:30 €, ўзбек тили «да»',
     } as const;
     for (const [lang, text] of Object.entries(texts)) {
       for (const mode of ['normal', 'grandpa', 'typos', 'manicure', 'breaks'] as Mode[]) {
