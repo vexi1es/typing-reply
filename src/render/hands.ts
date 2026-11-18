@@ -1,6 +1,6 @@
 import type { Timeline } from '../timeline';
 import { HOLD_ANCHOR, MOUTH_SCALE, breakAt, breakPose, drawHoldingHand } from './breaks';
-import { SCREEN_W, keyCenter } from './scene';
+import { SCREEN_H, SCREEN_W, keyCenter } from './scene';
 import type { Ctx2D, Pt } from './types';
 
 /**
@@ -60,9 +60,9 @@ function createFingers(mode: Timeline['mode']): Finger[] {
   const manicure = mode === 'manicure';
   const thumb = (side: -1 | 1): Finger => ({
     kind: 'thumb',
-    base: { x: SCREEN_W / 2 + side * 200, y: 890 },
-    home: { x: SCREEN_W / 2 + side * 125, y: 805 },
-    palm: { x: SCREEN_W / 2 + side * 245, y: 930, rx: manicure ? 78 : 85, ry: manicure ? 120 : 130 },
+    base: { x: SCREEN_W / 2 + side * 200, y: SCREEN_H + 46 },
+    home: { x: SCREEN_W / 2 + side * 125, y: SCREEN_H - 39 },
+    palm: { x: SCREEN_W / 2 + side * 245, y: SCREEN_H + 86, rx: manicure ? 78 : 85, ry: manicure ? 120 : 130 },
     width: manicure ? 29 : 34,
     longNail: manicure,
     travel: 0.14,

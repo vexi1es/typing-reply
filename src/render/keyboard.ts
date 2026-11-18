@@ -1,29 +1,37 @@
 import type { VideoStrings } from '../i18n';
-import type { KeyId, KeyRect } from '../keyboard/layout';
+import { KB, type KeyId, type KeyRect } from '../keyboard/layout';
 import type { KeyboardState } from '../keyboard/sim';
 import type { TypingState } from '../timeline';
 import { KB_H, SCREEN_W, kbTop, keyRects } from './scene';
 import type { Ctx2D } from './types';
 
+/**
+ * iOS 26 keyboard, copied from screenshots of an iPhone 14 Pro Max: a panel with rounded top
+ * corners, a prediction bar, flat keys (all the same colour), outline glyphs, 🌐 / 🎤 below.
+ */
 const LIGHT = {
-  bg: '#d1d4db',
+  panel: '#d3d5db',
   key: '#ffffff',
-  special: '#abb1bb',
-  pressed: '#abb1bb',
-  pressedSpecial: '#ffffff',
+  pressed: '#b8bcc4',
+  popup: '#ffffff',
   label: '#000000',
-  shadow: '#898a8d',
+  prediction: '#6c6c70',
+  separator: 'rgba(0,0,0,0.16)',
+  marker: '#8a8a8e',
+  smileyInk: '#ffffff',
 };
 
-/** iOS dark keyboard. */
+/** iOS dark keyboard (measured: panel #1f1f1f, keys #434343). */
 const DARK: typeof LIGHT = {
-  bg: '#262628',
-  key: '#6b6b6e',
-  special: '#464648',
-  pressed: '#464648',
-  pressedSpecial: '#6b6b6e',
+  panel: '#1f1f1f',
+  key: '#434343',
+  pressed: '#6c6c6c',
+  popup: '#5f5f5f',
   label: '#ffffff',
-  shadow: '#0e0e0f',
+  prediction: '#999999',
+  separator: 'rgba(255,255,255,0.16)',
+  marker: '#8c8c8c',
+  smileyInk: '#434343',
 };
 
 /** Current palette; set at the start of every drawKeyboard call (rendering is synchronous). */
@@ -32,11 +40,13 @@ let C = LIGHT;
 /** How long (s) the highlight / key popup stays after a press. */
 const FLASH = 0.12;
 
-/** ⇧ and ⌫ are drawn as vectors: fonts often lack them, and they must look the same everywhere. */
-const SPECIAL_LABEL: Partial<Record<KeyId, string>> = {
-  'to-symbols': '123',
-  'to-symbols2': '#+=',
+/** Default prediction words per keyboard language (left, centre, right). */
+const PREDICTIONS: Record<string, [string, string, string]> = {
+  ru: ['Я', 'я', 'Ну'],
+  uz: ['Men', 'Salom', 'Ha'],
 };
+/** Language marker in the corner of the space bar. */
+const SPACE_MARKER: Record<string, string> = { ru: 'ру', uz: 'uz' };
 
 export function drawKeyboard(
   ctx: Ctx2D,
@@ -49,8 +59,12 @@ export function drawKeyboard(
 ): void {
   C = dark ? DARK : LIGHT;
   const top = kbTop(slide);
-  ctx.fillStyle = C.bg;
-  ctx.fillRect(0, top, SCREEN_W, KB_H);
+  ctx.fillStyle = C.panel;
+  ctx.beginPath();
+  ctx.roundRect(0, top, SCREEN_W, KB_H + KB.radius, [KB.radius, KB.radius, 0, 0]);
+  ctx.fill();
+
+  drawPredictions(ctx, s, top, font);
 
   const flash = s.lastPress && t - s.lastPress.t < FLASH ? s.lastPress : null;
   const rects = keyRects(s.kb, slide);
@@ -58,47 +72,49 @@ export function drawKeyboard(
 
   for (const r of rects) {
     const isChar = r.id.startsWith('c:');
-    const isSpecial = !isChar && r.id !== 'space' && r.id !== 'globe';
     const pressed = flash?.key === r.id;
     if (pressed && isChar) popup = r;
+    const cx = r.x + r.w / 2;
+    const cy = r.y + r.h / 2;
 
-    // 🌐 sits in the strip under the keys, without a key cap
-    if (r.id !== 'globe') {
-      ctx.fillStyle = C.shadow;
-      rr(ctx, r.x, r.y + 1, r.w, r.h, 5);
-      ctx.fillStyle = pressed
-        ? isSpecial ? C.pressedSpecial : C.pressed
-        : isSpecial && !(r.id === 'shift' && s.kb.shift) ? C.special : C.key;
-      rr(ctx, r.x, r.y, r.w, r.h, 5);
-    }
-
-    if (r.id === 'shift') {
-      drawShift(ctx, r.x + r.w / 2, r.y + r.h / 2, s.kb.shift, s.kb.capsLock);
-      continue;
-    }
-    if (r.id === 'backspace') {
-      drawBackspace(ctx, r.x + r.w / 2, r.y + r.h / 2);
-      continue;
-    }
-    // iOS draws these as outline glyphs, not colour emoji
-    if (r.id === 'emoji') {
-      drawSmiley(ctx, r.x + r.w / 2, r.y + r.h / 2, 9.5);
-      continue;
-    }
     if (r.id === 'globe') {
-      drawGlobe(ctx, r.x + r.w / 2, r.y + r.h / 2, 10.5);
-      // 🎤 mirrored on the right of the strip (not a key the hands ever press)
-      drawMic(ctx, SCREEN_W - (r.x + r.w / 2), r.y + r.h / 2);
+      drawGlobe(ctx, cx, cy, KB.globe.size / 2);
+      drawMic(ctx, SCREEN_W - cx, cy);
       continue;
+    }
+
+    ctx.fillStyle = pressed && !isChar ? C.pressed : C.key;
+    rr(ctx, r.x, r.y, r.w, r.h, KB.keyRadius);
+
+    switch (r.id) {
+      case 'shift':
+        drawShift(ctx, cx, cy, s.kb.shift, s.kb.capsLock);
+        continue;
+      case 'backspace':
+        drawBackspace(ctx, cx, cy);
+        continue;
+      case 'emoji':
+        drawSmiley(ctx, cx, cy, 9.4);
+        continue;
+      case 'return':
+        drawReturn(ctx, cx, cy);
+        continue;
+      case 'space': {
+        ctx.fillStyle = C.marker;
+        ctx.font = `500 10.5px ${font}`;
+        ctx.textAlign = 'right';
+        ctx.textBaseline = 'alphabetic';
+        ctx.fillText(SPACE_MARKER[s.kb.lang] ?? '', r.x + r.w - 6, r.y + r.h - 6);
+        continue;
+      }
     }
 
     ctx.fillStyle = C.label;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     const label = keyLabel(r.id, s.kb, strings);
-    const size = isChar ? 22 : label.length > 2 ? 15 : 20;
-    ctx.font = `${size}px ${font}`;
-    ctx.fillText(label, r.x + r.w / 2, r.y + r.h / 2 + (isChar ? -1 : 0));
+    ctx.font = isChar ? `24px ${font}` : `${label.length > 2 && label.startsWith('#') ? 15 : 18}px ${font}`;
+    ctx.fillText(label, cx, cy + (isChar ? -1 : 0));
   }
 
   if (popup && flash) drawPopup(ctx, popup, flash.inserted ?? '', font);
@@ -106,15 +122,41 @@ export function drawKeyboard(
   ctx.textBaseline = 'alphabetic';
 }
 
+/** Three suggestions; while a word is being typed it shows up in quotes on the left, as on iOS. */
+function drawPredictions(ctx: Ctx2D, s: TypingState, top: number, font: string): void {
+  const defaults = PREDICTIONS[s.kb.lang] ?? ['', '', ''];
+  const text = s.sentAt === null ? s.graphemes.join('') : '';
+  const word = /[^\s.,!?;:]+$/u.exec(text)?.[0] ?? '';
+  const slots = [word ? `«${word}»` : defaults[0], defaults[1], defaults[2]];
+  const third = SCREEN_W / 3;
+  const y = top + KB.predictionY;
+
+  ctx.fillStyle = C.separator;
+  for (const i of [1, 2]) ctx.fillRect(third * i - 0.5, y - 11.5, 1, 23);
+
+  ctx.fillStyle = C.prediction;
+  ctx.font = `17px ${font}`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  slots.forEach((w, i) => {
+    let label = w;
+    while (label.length > 2 && ctx.measureText(label).width > third - 16) label = label.slice(1);
+    if (label !== w) label = `«…${label.replace(/^«/, '')}`;
+    ctx.fillText(label, third * i + third / 2, y);
+  });
+}
+
 function keyLabel(id: KeyId, kb: KeyboardState, strings: VideoStrings): string {
   if (id.startsWith('c:')) {
     const c = id.slice(2);
+    if (c === '"') return '”'; // iOS draws typographic quotes on the keys
+    if (c === "'") return '’';
     return kb.shift && kb.page === 'letters' ? c.toLocaleUpperCase() : c;
   }
   if (id === 'to-letters') return strings.lettersKey;
-  if (id === 'space') return strings.spaceKey;
-  if (id === 'return') return strings.returnKey;
-  return SPECIAL_LABEL[id] ?? '';
+  if (id === 'to-symbols') return '123';
+  if (id === 'to-symbols2') return '#+=';
+  return '';
 }
 
 /** Enlarged letter above the pressed key, like on iOS. */
@@ -123,10 +165,10 @@ function drawPopup(ctx: Ctx2D, r: KeyRect, ch: string, font: string): void {
   const x = r.x + r.w / 2 - w / 2;
   const h = r.h * 2.15;
   const y = r.y + r.h - h;
-  ctx.fillStyle = C.shadow;
-  rr(ctx, x, y + 1, w, h, 8);
-  ctx.fillStyle = C.key;
-  rr(ctx, x, y, w, h, 8);
+  ctx.fillStyle = 'rgba(0,0,0,0.35)';
+  rr(ctx, x, y + 1.5, w, h, 10);
+  ctx.fillStyle = C.popup;
+  rr(ctx, x, y, w, h, 10);
   ctx.fillStyle = C.label;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
@@ -134,41 +176,123 @@ function drawPopup(ctx: Ctx2D, r: KeyRect, ch: string, font: string): void {
   ctx.fillText(ch, x + w / 2, y + r.h * 0.6);
 }
 
+/** ⇧ — outline when off, filled when on, filled with a bar under it for Caps Lock. */
 function drawShift(ctx: Ctx2D, x: number, y: number, on: boolean, locked: boolean): void {
+  const dy = locked ? -2 : 0;
   ctx.beginPath();
-  ctx.moveTo(x, y - 9);
-  ctx.lineTo(x + 9, y + 1);
-  ctx.lineTo(x + 4, y + 1);
-  ctx.lineTo(x + 4, y + 8);
-  ctx.lineTo(x - 4, y + 8);
-  ctx.lineTo(x - 4, y + 1);
-  ctx.lineTo(x - 9, y + 1);
+  ctx.moveTo(x, y - 8.3 + dy);
+  ctx.lineTo(x + 9.8, y + 1.2 + dy);
+  ctx.lineTo(x + 4.8, y + 1.2 + dy);
+  ctx.lineTo(x + 4.8, y + 8.3 + dy);
+  ctx.lineTo(x - 4.8, y + 8.3 + dy);
+  ctx.lineTo(x - 4.8, y + 1.2 + dy);
+  ctx.lineTo(x - 9.8, y + 1.2 + dy);
   ctx.closePath();
   ctx.lineJoin = 'round';
-  ctx.lineWidth = 1.6;
+  ctx.lineWidth = 1.7;
   ctx.strokeStyle = C.label;
   ctx.fillStyle = C.label;
   if (on) ctx.fill();
-  else ctx.stroke();
-  if (locked) ctx.fillRect(x - 5, y + 11, 10, 2); // bar under the arrow = Caps Lock
+  ctx.stroke();
+  if (locked) rr(ctx, x - 4.8, y + 9.5, 9.6, 2, 1);
 }
 
+/** ⌫ — pentagon with a cross. */
 function drawBackspace(ctx: Ctx2D, x: number, y: number): void {
   ctx.strokeStyle = C.label;
-  ctx.lineWidth = 1.6;
+  ctx.lineWidth = 1.7;
   ctx.lineJoin = 'round';
   ctx.lineCap = 'round';
   ctx.beginPath();
-  ctx.moveTo(x - 12, y);
-  ctx.lineTo(x - 5, y - 8);
-  ctx.lineTo(x + 11, y - 8);
-  ctx.lineTo(x + 11, y + 8);
-  ctx.lineTo(x - 5, y + 8);
+  ctx.moveTo(x - 10, y);
+  ctx.lineTo(x - 4, y - 7.8);
+  ctx.lineTo(x + 8, y - 7.8);
+  ctx.quadraticCurveTo(x + 10, y - 7.8, x + 10, y - 5.8);
+  ctx.lineTo(x + 10, y + 5.8);
+  ctx.quadraticCurveTo(x + 10, y + 7.8, x + 8, y + 7.8);
+  ctx.lineTo(x - 4, y + 7.8);
   ctx.closePath();
-  ctx.moveTo(x - 1, y - 4);
-  ctx.lineTo(x + 7, y + 4);
-  ctx.moveTo(x + 7, y - 4);
-  ctx.lineTo(x - 1, y + 4);
+  ctx.moveTo(x - 0.5, y - 3.5);
+  ctx.lineTo(x + 6.5, y + 3.5);
+  ctx.moveTo(x + 6.5, y - 3.5);
+  ctx.lineTo(x - 0.5, y + 3.5);
+  ctx.stroke();
+}
+
+/** ↵ on the return key. */
+function drawReturn(ctx: Ctx2D, x: number, y: number): void {
+  ctx.strokeStyle = C.label;
+  ctx.lineWidth = 1.7;
+  ctx.lineJoin = 'round';
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.moveTo(x + 9.5, y - 8);
+  ctx.lineTo(x + 9.5, y + 0.5);
+  ctx.quadraticCurveTo(x + 9.5, y + 2.5, x + 7.5, y + 2.5);
+  ctx.lineTo(x - 9.5, y + 2.5);
+  ctx.moveTo(x - 4, y - 3);
+  ctx.lineTo(x - 9.5, y + 2.5);
+  ctx.lineTo(x - 4, y + 8);
+  ctx.stroke();
+}
+
+/** Filled smiley with an open grin (the emoji key). */
+function drawSmiley(ctx: Ctx2D, x: number, y: number, r: number): void {
+  ctx.fillStyle = C.label;
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.fill();
+  ctx.fillStyle = C.smileyInk;
+  for (const dx of [-3.2, 3.2]) {
+    ctx.beginPath();
+    ctx.ellipse(x + dx, y - 2.8, 1.2, 1.8, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.beginPath();
+  ctx.moveTo(x - 5.4, y + 1.2);
+  ctx.quadraticCurveTo(x, y + 2.2, x + 5.4, y + 1.2);
+  ctx.quadraticCurveTo(x + 4.6, y + 6.4, x, y + 6.4);
+  ctx.quadraticCurveTo(x - 4.6, y + 6.4, x - 5.4, y + 1.2);
+  ctx.fill();
+}
+
+/** Outline globe of the keyboard switcher. */
+function drawGlobe(ctx: Ctx2D, x: number, y: number, r: number): void {
+  ctx.strokeStyle = C.label;
+  ctx.lineWidth = 1.6;
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.save();
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.clip();
+  ctx.beginPath();
+  ctx.ellipse(x, y, r * 0.45, r, 0, 0, Math.PI * 2);
+  ctx.moveTo(x, y - r);
+  ctx.lineTo(x, y + r);
+  for (const k of [-0.5, 0, 0.5]) {
+    ctx.moveTo(x - r, y + r * k);
+    ctx.lineTo(x + r, y + r * k);
+  }
+  ctx.stroke();
+  ctx.restore();
+}
+
+/** Outline microphone (dictation) with its stand. */
+function drawMic(ctx: Ctx2D, x: number, y: number): void {
+  ctx.strokeStyle = C.label;
+  ctx.lineWidth = 1.6;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.roundRect(x - 4.3, y - 13.5, 8.6, 17, 4.3);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.arc(x, y - 3, 8.3, 0.05 * Math.PI, 0.95 * Math.PI);
+  ctx.moveTo(x, y + 5.3);
+  ctx.lineTo(x, y + 12);
+  ctx.moveTo(x - 6, y + 13.5);
+  ctx.lineTo(x + 6, y + 13.5);
   ctx.stroke();
 }
 
@@ -176,59 +300,4 @@ export function rr(ctx: Ctx2D, x: number, y: number, w: number, h: number, r: nu
   ctx.beginPath();
   ctx.roundRect(x, y, w, h, r);
   ctx.fill();
-}
-
-/** Outline smiley of the emoji key. */
-function drawSmiley(ctx: Ctx2D, x: number, y: number, r: number): void {
-  ctx.strokeStyle = C.label;
-  ctx.fillStyle = C.label;
-  ctx.lineWidth = 1.6;
-  ctx.lineCap = 'round';
-  ctx.beginPath();
-  ctx.arc(x, y, r, 0, Math.PI * 2);
-  ctx.stroke();
-  for (const dx of [-3.3, 3.3]) {
-    ctx.beginPath();
-    ctx.ellipse(x + dx, y - 2.6, 1.1, 1.6, 0, 0, Math.PI * 2);
-    ctx.fill();
-  }
-  ctx.beginPath();
-  ctx.arc(x, y + 0.6, 5, 0.18 * Math.PI, 0.82 * Math.PI);
-  ctx.stroke();
-}
-
-/** Outline globe of the keyboard switcher. */
-function drawGlobe(ctx: Ctx2D, x: number, y: number, r: number): void {
-  ctx.strokeStyle = C.label;
-  ctx.lineWidth = 1.5;
-  ctx.beginPath();
-  ctx.arc(x, y, r, 0, Math.PI * 2);
-  ctx.stroke();
-  ctx.beginPath();
-  ctx.ellipse(x, y, r * 0.45, r, 0, 0, Math.PI * 2);
-  ctx.moveTo(x, y - r);
-  ctx.lineTo(x, y + r);
-  ctx.moveTo(x - r, y);
-  ctx.lineTo(x + r, y);
-  ctx.moveTo(x - r * 0.86, y - r * 0.5);
-  ctx.lineTo(x + r * 0.86, y - r * 0.5);
-  ctx.moveTo(x - r * 0.86, y + r * 0.5);
-  ctx.lineTo(x + r * 0.86, y + r * 0.5);
-  ctx.stroke();
-}
-
-/** Outline microphone (dictation) in the strip. */
-function drawMic(ctx: Ctx2D, x: number, y: number): void {
-  ctx.strokeStyle = C.label;
-  ctx.fillStyle = C.label;
-  ctx.lineWidth = 1.6;
-  ctx.lineCap = 'round';
-  ctx.beginPath();
-  ctx.roundRect(x - 3.5, y - 10, 7, 13, 3.5);
-  ctx.fill();
-  ctx.beginPath();
-  ctx.arc(x, y - 1.5, 7, 0.08 * Math.PI, 0.92 * Math.PI);
-  ctx.moveTo(x, y + 5.5);
-  ctx.lineTo(x, y + 9);
-  ctx.stroke();
 }

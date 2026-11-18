@@ -14,7 +14,7 @@ import {
   drawTgDarkInputButtons,
   drawWallpaper,
   isTelegram,
-  TG_DARK_FIELD,
+  TG_ROW,
   type ChatLook,
 } from './chat';
 import { drawHands } from './hands';
@@ -35,6 +35,8 @@ export interface RenderOptions {
   fontFamily?: string;
   /** Contact name/photo and messenger look. */
   look?: ChatLook;
+  /** Debug: skip the hands (for comparing the screen with reference screenshots). */
+  noHands?: boolean;
 }
 
 export const DEFAULT_FONT = 'Inter, system-ui, -apple-system, Roboto, "Apple Color Emoji", "Noto Color Emoji", sans-serif';
@@ -83,10 +85,10 @@ export function renderFrame(ctx: Ctx2D, tl: Timeline, t: number, opts: RenderOpt
 
   // Body and screen
   ctx.fillStyle = PHONE;
-  rr(ctx, -13, -13, SCREEN_W + 26, SCREEN_H + 26, 58);
+  rr(ctx, -13, -13, SCREEN_W + 26, SCREEN_H + 26, 68);
   ctx.save();
   ctx.beginPath();
-  ctx.roundRect(0, 0, SCREEN_W, SCREEN_H, 46);
+  ctx.roundRect(0, 0, SCREEN_W, SCREEN_H, 55);
   ctx.clip();
   drawWallpaper(ctx, look);
 
@@ -96,14 +98,21 @@ export function renderFrame(ctx: Ctx2D, tl: Timeline, t: number, opts: RenderOpt
 
   // Input field (grows upwards, shows the last lines)
   const typing = s.sentAt === null ? s.graphemes : [];
-  // Dark Telegram: the field sits between round 📎 and 🎤/send buttons; the send button is at the
-  // same spot as in the other looks (hands aim at sendCenter).
-  const fx0 = tgDark ? TG_DARK_FIELD.x0 : FIELD_X;
-  const fx1 = tgDark ? TG_DARK_FIELD.x1 : FIELD_X + FIELD_W;
-  const fieldTextW = tgDark ? fx1 - fx0 - 24 - 16 : FIELD_W - 24 - SEND_R * 2;
+  // Dark Telegram: the field sits between round 📎 and 🎤/send buttons; with the keyboard open the
+  // send button is at the same spot as in the other looks (hands aim at sendCenter).
+  const row = {
+    attachX: lerp(TG_ROW.open.attachX, TG_ROW.closed.attachX, slide),
+    x0: lerp(TG_ROW.open.x0, TG_ROW.closed.x0, slide),
+    x1: lerp(TG_ROW.open.x1, TG_ROW.closed.x1, slide),
+    sendX: lerp(TG_ROW.open.sendX, TG_ROW.closed.sendX, slide),
+  };
+  const fx0 = tgDark ? row.x0 : FIELD_X;
+  const fx1 = tgDark ? row.x1 : FIELD_X + FIELD_W;
+  const fieldTextW = tgDark ? fx1 - fx0 - 24 - 28 : FIELD_W - 24 - SEND_R * 2;
   const allLines = typing.length ? wrap(ctx, typing, fieldTextW) : [];
   const lines = allLines.slice(-MAX_FIELD_LINES);
-  const fieldH = Math.max(FIELD_MIN_H, lines.length * LINE_H + 14);
+  const padY = (FIELD_MIN_H - LINE_H) / 2;
+  const fieldH = Math.max(FIELD_MIN_H, lines.length * LINE_H + padY * 2);
   const fBottom = fieldBottom(slide);
   const fTop = fBottom - fieldH;
   if (C.panel) {
@@ -121,18 +130,19 @@ export function renderFrame(ctx: Ctx2D, tl: Timeline, t: number, opts: RenderOpt
     ctx.fillStyle = g;
     ctx.fillRect(0, fTop - 30, SCREEN_W, SCREEN_H - fTop + 30);
   }
+  const fr = FIELD_MIN_H / 2;
   ctx.fillStyle = C.fieldBorder;
-  rr(ctx, fx0 - 1, fTop - 1, fx1 - fx0 + 2, fieldH + 2, 19);
+  rr(ctx, fx0 - 1, fTop - 1, fx1 - fx0 + 2, fieldH + 2, fr + 1);
   ctx.fillStyle = C.field;
-  rr(ctx, fx0, fTop, fx1 - fx0, fieldH, 18);
+  rr(ctx, fx0, fTop, fx1 - fx0, fieldH, fr);
   if (tgDark) {
-    drawTgDarkInputButtons(ctx, fBottom - FIELD_MIN_H / 2, sendCenter(slide).x, typing.length > 0);
-    drawStickerIcon(ctx, fx1 - 18, fBottom - FIELD_MIN_H / 2);
+    drawTgDarkInputButtons(ctx, fBottom - fr, row.attachX, row.sendX, typing.length > 0);
+    drawStickerIcon(ctx, fx1 - 20, fBottom - fr);
   }
 
   ctx.textBaseline = 'middle';
-  const textX = fx0 + 12;
-  const lineY = (i: number) => fTop + 7 + LINE_H * i + LINE_H / 2;
+  const textX = fx0 + 13;
+  const lineY = (i: number) => fTop + padY + LINE_H * i + LINE_H / 2;
   if (lines.length) {
     ctx.fillStyle = C.fieldText;
     lines.forEach((l, i) => ctx.fillText(l, textX, lineY(i)));
@@ -153,7 +163,7 @@ export function renderFrame(ctx: Ctx2D, tl: Timeline, t: number, opts: RenderOpt
 
   // Send button
   if (typing.length) {
-    const sc = sendCenter(slide);
+    const sc = tgDark ? { x: row.sendX, y: fBottom - fr } : sendCenter(slide);
     if (!tgDark) {
       ctx.fillStyle = C.accent;
       ctx.beginPath();
@@ -229,7 +239,7 @@ export function renderFrame(ctx: Ctx2D, tl: Timeline, t: number, opts: RenderOpt
 
   ctx.restore(); // drop the screen clip
 
-  drawHands(ctx, tl, t, S);
+  if (!opts.noHands) drawHands(ctx, tl, t, S);
   drawExhale(ctx, tl, t, (H - oy) / S);
   ctx.restore();
   ctx.textBaseline = 'alphabetic';
@@ -249,6 +259,7 @@ function drawArrowUp(ctx: Ctx2D, x: number, y: number): void {
   ctx.stroke();
 }
 
+const lerp = (a: number, b: number, k: number) => a + (b - a) * k;
 const clamp01 = (x: number) => Math.min(1, Math.max(0, x));
 const easeOut = (p: number) => 1 - (1 - p) ** 3;
 

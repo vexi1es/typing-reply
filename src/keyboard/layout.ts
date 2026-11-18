@@ -87,52 +87,86 @@ export interface KeyRect {
 }
 
 /**
- * Keyboard geometry in pixels relative to its top-left corner.
- * 4 rows of keys + a bottom strip with the emoji key, like on an iPhone.
+ * iOS 26 keyboard on a 430 pt wide screen (iPhone 14 Pro Max), measured from real screenshots.
+ * All values are points; y is relative to the top of the keyboard panel.
  */
-export function keyboardGeometry(lang: Lang, page: Page, width: number, height: number): KeyRect[] {
-  const rows = pageRows(lang, page);
-  const baseUnits = Math.max(...rows.map((r) => r.reduce((s, k) => s + (k.w === 1 ? 1 : 0), 0)), 10);
-  const padX = width * 0.01;
-  const innerW = width - padX * 2;
-  const unit = innerW / baseUnits;
-  const gap = unit * 0.14;
+export const KB = {
+  /** Panel height from its top edge to the bottom of the screen. */
+  height: 346.7,
+  /** Rounded top corners of the panel. */
+  radius: 25,
+  /** Prediction bar: text baseline centre and separators. */
+  predictionY: 24.3,
+  margin: 6.67,
+  gap: 6.33,
+  keyH: 44.67,
+  rowPitch: 56,
+  /** Top of the first key row. */
+  firstRow: 51.7,
+  keyRadius: 9,
+  /** Shift / backspace / #+= next to shorter letter rows. */
+  sideKeyW: 48.67,
+  /** Bottom row: [123] [emoji] [space] [return]. */
+  bottom: [
+    { x: 6.67, w: 46.33 },
+    { x: 59.33, w: 46.67 },
+    { x: 112.33, w: 205 },
+    { x: 323.67, w: 99.67 },
+  ],
+  /** 🌐 under the keys (centre, from the panel top) and its size; the 🎤 mirrors it on the right. */
+  globe: { x: 42.3, y: 346.7 - 40.2, size: 26 },
+  width: 430,
+} as const;
 
-  const barH = height * 0.26;
-  const rowH = (height - barH) / 4;
-  const keyH = rowH * 0.8;
+/** Key rectangles relative to the keyboard panel's top-left corner. */
+export function keyboardGeometry(lang: Lang, page: Page): KeyRect[] {
+  const rows = pageRows(lang, page);
+  const { margin: M, gap: G, keyH, width: W } = KB;
+  const inner = W - 2 * M;
+  const rowY = (i: number) => KB.firstRow + i * KB.rowPitch;
   const rects: KeyRect[] = [];
 
+  // Pitch of a full row: the longest plain row fills the width (10 keys → 42.3 pt, 11 → 38.4 pt).
+  const plain = (r: KeySpec[]) => r.every((k) => k.id.startsWith('c:'));
+  const fullCount = Math.max(...rows.filter(plain).map((r) => r.length), 10);
+  const pitch = (inner + G) / fullCount;
+  const placeRow = (keys: KeySpec[], y: number, p: number, w: number, x0: number) => {
+    keys.forEach((k, i) => rects.push({ id: k.id, x: x0 + i * p, y, w, h: keyH }));
+  };
+
   rows.forEach((row, ri) => {
-    const units = row.reduce((s, k) => s + k.w, 0);
-    const u = Math.min(unit, innerW / units);
-    let x = padX + (innerW - units * u) / 2;
-    const y = ri * rowH + (rowH - keyH) / 2;
-    for (const k of row) {
-      rects.push({ id: k.id, x: x + gap / 2, y, w: k.w * u - gap, h: keyH });
-      x += k.w * u;
+    const y = rowY(ri);
+    if (plain(row)) {
+      // Centred with the full-row pitch (the 9-key row of QWERTY is indented)
+      const span = row.length * pitch - G;
+      placeRow(row, y, pitch, pitch - G, (W - span) / 2);
+      return;
     }
+    // Third row: [side] keys [side]
+    const [left, ...rest] = row;
+    const right = rest.pop()!;
+    const mid = rest;
+    if (mid.length + 2 === fullCount) {
+      // Russian: shift and backspace are as wide as letters
+      placeRow(row, y, pitch, pitch - G, M);
+      return;
+    }
+    rects.push({ id: left!.id, x: M, y, w: KB.sideKeyW, h: keyH });
+    rects.push({ id: right.id, x: W - M - KB.sideKeyW, y, w: KB.sideKeyW, h: keyH });
+    // Middle keys are centred on the screen: letters keep the row pitch (shrunk if they don't fit),
+    // the 5 wide punctuation keys of the 123 pages share the span of 7 QWERTY letters.
+    const maxSpan = W - 2 * (M + KB.sideKeyW + G);
+    const isWide = mid.every((k) => k.w > 1);
+    const span = isWide ? 7 * ((inner + G) / 10) - G : Math.min(mid.length * pitch - G, maxSpan);
+    const p = (span + G) / mid.length;
+    placeRow(mid, y, p, p - G, (W - span) / 2);
   });
 
-  // Bottom row: [123/ABC] [emoji] [ space ] [return] — like Face ID iPhones
-  const y4 = 3 * rowH + (rowH - keyH) / 2;
-  const bottom: { id: KeyId; frac: number }[] = [
-    { id: page === 'letters' ? 'to-symbols' : 'to-letters', frac: 0.12 },
-    { id: 'emoji', frac: 0.12 },
-    { id: 'space', frac: 0.52 },
-    { id: 'return', frac: 0.24 },
-  ];
-  let x = padX;
-  for (const b of bottom) {
-    const w = innerW * b.frac;
-    rects.push({ id: b.id, x: x + gap / 2, y: y4, w: w - gap, h: keyH });
-    x += w;
-  }
+  const y4 = rowY(3);
+  const bottomIds: KeyId[] = [page === 'letters' ? 'to-symbols' : 'to-letters', 'emoji', 'space', 'return'];
+  bottomIds.forEach((id, i) => rects.push({ id, x: KB.bottom[i]!.x, y: y4, w: KB.bottom[i]!.w, h: keyH }));
 
-  // Strip below the keyboard (where the home indicator lives): 🌐 on the left (the 🎤 on the right
-  // is only drawn, never pressed)
-  const e = Math.min(keyH, barH * 0.45);
-  rects.push({ id: 'globe', x: padX + unit * 0.3, y: 4 * rowH + barH * 0.1, w: e, h: e });
-
+  const g = KB.globe;
+  rects.push({ id: 'globe', x: g.x - g.size / 2, y: g.y - g.size / 2, w: g.size, h: g.size });
   return rects;
 }

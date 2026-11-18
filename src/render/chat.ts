@@ -5,7 +5,7 @@ import type { Ctx2D } from './types';
 
 /**
  * Chat look: who we are replying to and which messenger it imitates.
- * Everything here is drawn in screen points (390×844), like the rest of the scene.
+ * Everything here is drawn in screen points (430×932, iPhone 14 Pro Max), like the rest of the scene.
  *
  * - `telegram-dark`: current Telegram for iOS in the dark theme — floating glass pills instead of a
  *   header bar, starry wallpaper, round attach / mic buttons around the input field;
@@ -116,8 +116,8 @@ export const PALETTES: Record<ChatTheme, Palette> = {
     inMeta: '#7f8a99',
     wave: '#3f93f0',
     accent: '#3f93f0',
-    field: 'rgba(38,42,50,0.92)',
-    fieldBorder: 'rgba(255,255,255,0.10)',
+    field: '#252525',
+    fieldBorder: 'rgba(255,255,255,0.16)',
     fieldText: '#ffffff',
     placeholder: '#8b919b',
     panel: null,
@@ -129,12 +129,19 @@ export const PALETTES: Record<ChatTheme, Palette> = {
 };
 
 /** Lowest point covered by the header (status bar + navigation), pt. */
-export const HEADER_BOTTOM: Record<ChatTheme, number> = { imessage: 150, telegram: 102, 'telegram-dark': 100 };
+export const HEADER_BOTTOM: Record<ChatTheme, number> = { imessage: 150, telegram: 102, 'telegram-dark': 112 };
 
 export const isTelegram = (t: ChatTheme) => t !== 'imessage';
 
-/** Telegram-dark input row: round attach button, glass field, round mic/send button (x ranges, pt). */
-export const TG_DARK_FIELD = { x0: 58, x1: 334 };
+/**
+ * Telegram-dark input row (measured): round 📎, glass field, round 🎤/send. With the keyboard open
+ * the row spreads to the edges; when it is closed the row is inset (iOS 26 glass bar).
+ */
+export const TG_ROW = {
+  open: { attachX: 28.3, x0: 54.3, x1: 375.7, sendX: 402 },
+  closed: { attachX: 45, x0: 72, x1: 357, sendX: 383 },
+  buttonR: 20,
+};
 
 // ——— Wallpapers ———
 
@@ -218,7 +225,7 @@ function drawSpace(ctx: Ctx2D): void {
   }
   // Planet with a soft glow
   const px = SCREEN_W / 2;
-  const py = 438;
+  const py = 483;
   const glow = ctx.createRadialGradient(px, py, 8, px, py, 40);
   glow.addColorStop(0, 'rgba(120,200,190,0.35)');
   glow.addColorStop(1, 'rgba(120,200,190,0)');
@@ -295,43 +302,43 @@ export function drawHeader(ctx: Ctx2D, look: ChatLook, strings: VideoStrings, fo
 /** New Telegram: back pill with the unread counter, name pill in the centre, round avatar. */
 function drawGlassHeader(ctx: Ctx2D, look: ChatLook, strings: VideoStrings, font: string): void {
   const p = PALETTES['telegram-dark'];
-  const y = 58;
-  const h = 40;
+  const y = 64;
+  const h = 43;
 
-  // Back pill: ‹ + white counter badge
-  glassPill(ctx, 15, y, 68, h);
-  drawChevron(ctx, 27, y + h / 2, '#ffffff', 2.6);
+  // Back pill: ‹ + white counter badge (measured from the user's Telegram)
+  glassPill(ctx, 16, y, 74, h);
+  drawChevron(ctx, 30, y + h / 2, '#ffffff', 2.6);
   const unread = '67';
   ctx.font = `500 13px ${font}`;
   const bw = Math.max(22, ctx.measureText(unread).width + 12);
   ctx.fillStyle = '#ffffff';
-  rr(ctx, 41, y + h / 2 - 10, bw, 20, 10);
+  rr(ctx, 46, y + h / 2 - 10.5, bw, 21, 10.5);
   ctx.fillStyle = '#000000';
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText(unread, 41 + bw / 2, y + h / 2 + 0.5);
+  ctx.fillText(unread, 46 + bw / 2, y + h / 2 + 0.5);
 
   // Name pill
   ctx.font = `600 15px ${font}`;
-  const name = ellipsize(ctx, look.name, 150);
+  const name = ellipsize(ctx, look.name, 160);
   ctx.font = `400 12px ${font}`;
   const statusW = ctx.measureText(strings.lastSeen).width;
   ctx.font = `600 15px ${font}`;
-  const pw = Math.min(170, Math.max(ctx.measureText(name).width, statusW) + 34);
+  const pw = Math.min(180, Math.max(ctx.measureText(name).width, statusW) + 40);
   glassPill(ctx, SCREEN_W / 2 - pw / 2, y, pw, h);
   ctx.fillStyle = p.fg;
-  ctx.fillText(name, SCREEN_W / 2, y + 13);
+  ctx.fillText(name, SCREEN_W / 2, y + 14.5);
   ctx.font = `400 12px ${font}`;
   ctx.fillStyle = p.muted;
-  ctx.fillText(strings.lastSeen, SCREEN_W / 2, y + 29);
+  ctx.fillText(strings.lastSeen, SCREEN_W / 2, y + 30.5);
   ctx.textAlign = 'left';
 
   // Avatar with a thin glass ring
   ctx.fillStyle = 'rgba(255,255,255,0.18)';
   ctx.beginPath();
-  ctx.arc(SCREEN_W - 35, y + h / 2, 21, 0, Math.PI * 2);
+  ctx.arc(SCREEN_W - 38, y + h / 2, 23, 0, Math.PI * 2);
   ctx.fill();
-  drawAvatar(ctx, look, SCREEN_W - 35, y + h / 2, 19, font);
+  drawAvatar(ctx, look, SCREEN_W - 38, y + h / 2, 21, font);
 }
 
 function glassPill(ctx: Ctx2D, x: number, y: number, w: number, h: number): void {
@@ -352,20 +359,20 @@ function drawStatusBar(ctx: Ctx2D, clock: string, battery: number, font: string,
   ctx.font = `600 17px ${font}`;
   ctx.textAlign = 'center';
   ctx.textBaseline = 'middle';
-  ctx.fillText(clock, 70, 31);
+  ctx.fillText(clock, 80, 30);
   ctx.textAlign = 'left';
 
   // Dynamic Island
   ctx.fillStyle = '#000000';
   rr(ctx, SCREEN_W / 2 - 63, 11, 126, 37, 18.5);
 
-  // Icons measured from an iOS 26 screenshot (iPhone, dual SIM). Dimmed parts = no signal / empty.
+  // Icons measured from an iOS 26 screenshot (iPhone 14 Pro Max, dual SIM). Dimmed = no signal / empty.
   const dim = dark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.28)';
 
   // Dual-SIM signal: top row — 4 rising bars (SIM 1), bottom row — 4 dots (SIM 2); 3 of 4 active.
   const tops = [25.8, 24.6, 22.9, 21.3];
   for (let i = 0; i < 4; i++) {
-    const cx = 267 + i * 6;
+    const cx = 307 + i * 6;
     ctx.fillStyle = i < 3 ? fg : dim;
     rr(ctx, cx - 1.65, tops[i]!, 3.3, 30 - tops[i]!, 1.65);
     ctx.beginPath();
@@ -374,7 +381,7 @@ function drawStatusBar(ctx: Ctx2D, clock: string, battery: number, font: string,
   }
 
   // Wi-Fi: two thick arcs and a filled wedge, all from one point at the bottom
-  const wx = 303;
+  const wx = 343.3;
   const wy = 35.4;
   const a0 = -Math.PI * 0.75;
   const a1 = -Math.PI * 0.25;
@@ -397,7 +404,7 @@ function drawStatusBar(ctx: Ctx2D, clock: string, battery: number, font: string,
   ctx.stroke();
 
   // Battery with the percentage inside: filled part = level (red when low), the rest dimmed
-  const bx = 321.3;
+  const bx = 361.3;
   const by = 21.7;
   const bw = 29.6;
   const bh = 14.6;
@@ -524,41 +531,41 @@ export function drawVoiceBubble(ctx: Ctx2D, look: ChatLook, bottom: number, seco
   }
 
   const dark = look.theme === 'telegram-dark';
-  const w = dark ? 254 : 262;
-  const h = dark ? 64 : 60;
-  const x = 8;
+  const w = dark ? 278 : 286;
+  const h = dark ? 68 : 62;
+  const x = 9;
   const y = bottom - h;
   ctx.fillStyle = p.inBubble;
   rr(ctx, x, y, w, h, 18);
   if (dark) drawTail(ctx, x, y + h, p.inBubble);
 
   // Blue circle with ▶
-  const cx = x + (dark ? 30 : 32);
+  const cx = x + 33;
   ctx.fillStyle = p.accent;
   ctx.beginPath();
-  ctx.arc(cx, y + h / 2, dark ? 21 : 22, 0, Math.PI * 2);
+  ctx.arc(cx, y + h / 2, 22, 0, Math.PI * 2);
   ctx.fill();
   ctx.fillStyle = '#ffffff';
   triangle(ctx, cx - 6, y + h / 2, 16);
 
-  const wx = x + 62;
+  const wx = x + 67;
   if (dark) {
     // New Telegram: mostly a dotted line, a few bars where there was sound
-    const n = 40;
+    const n = 44;
     for (let i = 0; i < n; i++) {
       const a = waveAmp(i, seconds);
       const bh = a > 0.55 ? 4 + 13 * a : 1.6;
       ctx.fillStyle = p.wave;
-      rr(ctx, wx + i * 3.6, y + 27 - bh, 1.8, bh, 0.9);
+      rr(ctx, wx + i * 3.6, y + 29 - bh, 1.8, bh, 0.9);
     }
     // “→A” transcription button
     ctx.fillStyle = 'rgba(63,147,240,0.16)';
-    rr(ctx, x + w - 34, y + 8, 26, 26, 8);
+    rr(ctx, x + w - 36, y + 8, 28, 28, 9);
     ctx.fillStyle = p.accent;
     ctx.font = `600 12px ${font}`;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText('→A', x + w - 21, y + 21.5);
+    ctx.fillText('→A', x + w - 22, y + 22.5);
     ctx.textAlign = 'left';
   } else {
     ctx.fillStyle = p.wave;
@@ -571,10 +578,10 @@ export function drawVoiceBubble(ctx: Ctx2D, look: ChatLook, bottom: number, seco
   ctx.textBaseline = 'middle';
   ctx.fillStyle = p.inMeta;
   const dur = formatDuration(seconds);
-  ctx.fillText(dur, wx, y + 44);
+  ctx.fillText(dur, wx, y + h - 19);
   ctx.fillStyle = p.accent;
   ctx.beginPath();
-  ctx.arc(wx + ctx.measureText(dur).width + 6, y + 44, 2.5, 0, Math.PI * 2);
+  ctx.arc(wx + ctx.measureText(dur).width + 6, y + h - 19, 2.5, 0, Math.PI * 2);
   ctx.fill();
   ctx.fillStyle = p.inMeta;
   ctx.font = `400 11px ${font}`;
@@ -624,36 +631,41 @@ export function drawChecks(ctx: Ctx2D, x: number, y: number, color: string): voi
 // ——— Telegram-dark input row ———
 
 /** Round glass buttons around the field: 📎 on the left, 🎤 on the right (replaced by Send while typing). */
-export function drawTgDarkInputButtons(ctx: Ctx2D, cy: number, sendX: number, typing: boolean): void {
+export function drawTgDarkInputButtons(ctx: Ctx2D, cy: number, attachX: number, sendX: number, typing: boolean): void {
   const p = PALETTES['telegram-dark'];
+  const R = TG_ROW.buttonR;
   // Attach
-  glassCircle(ctx, 30, cy, 19);
+  glassCircle(ctx, attachX, cy, R);
   ctx.strokeStyle = '#ffffff';
   ctx.lineWidth = 1.8;
   ctx.lineCap = 'round';
   ctx.beginPath();
   // paperclip: two nested rounded strokes, tilted
   ctx.save();
-  ctx.translate(30, cy);
+  ctx.translate(attachX, cy);
   ctx.rotate(Math.PI / 4);
+  ctx.lineWidth = 1.9;
+  ctx.lineJoin = 'round';
   ctx.beginPath();
-  ctx.moveTo(-3, 6);
-  ctx.lineTo(-3, -5);
-  ctx.arc(0, -5, 3, Math.PI, 0);
-  ctx.lineTo(3, 7);
-  ctx.arc(-1, 7, 4, 0, Math.PI);
-  ctx.lineTo(-5, -6);
+  ctx.moveTo(2.4, -3.5);
+  ctx.lineTo(2.4, 5.5);
+  ctx.arc(0, 5.5, 2.4, 0, Math.PI);
+  ctx.lineTo(-2.4, -6.5);
+  ctx.arc(1.1, -6.5, 3.5, Math.PI, 0);
+  ctx.lineTo(4.6, 6.5);
+  ctx.arc(0, 6.5, 4.6, 0, Math.PI);
+  ctx.lineTo(-4.6, -1.5);
   ctx.stroke();
   ctx.restore();
 
   if (typing) {
     ctx.fillStyle = p.accent;
     ctx.beginPath();
-    ctx.arc(sendX, cy, 19, 0, Math.PI * 2);
+    ctx.arc(sendX, cy, R, 0, Math.PI * 2);
     ctx.fill();
     return;
   }
-  glassCircle(ctx, sendX, cy, 19);
+  glassCircle(ctx, sendX, cy, R);
   // Mic
   ctx.strokeStyle = '#ffffff';
   ctx.fillStyle = '#ffffff';
@@ -670,20 +682,23 @@ export function drawTgDarkInputButtons(ctx: Ctx2D, cy: number, sendX: number, ty
 
 /** Sticker icon inside the field (circle with a peeled corner). */
 export function drawStickerIcon(ctx: Ctx2D, x: number, y: number): void {
-  ctx.strokeStyle = '#8b919b';
-  ctx.lineWidth = 1.6;
+  // Circle with its top-right corner folded in (Telegram's sticker button)
+  ctx.strokeStyle = '#8e8e8e';
+  ctx.lineWidth = 1.8;
+  ctx.lineJoin = 'round';
   ctx.beginPath();
-  ctx.arc(x, y, 8, -0.1 * Math.PI, 1.6 * Math.PI);
-  ctx.quadraticCurveTo(x + 1, y - 1, x + 8, y - 2.5);
+  ctx.arc(x, y, 9.5, -0.02 * Math.PI, 1.52 * Math.PI);
+  ctx.quadraticCurveTo(x + 1, y - 7, x + 1, y - 1);
+  ctx.quadraticCurveTo(x + 2, y - 0.3, x + 9.5, y - 0.6);
   ctx.stroke();
 }
 
 function glassCircle(ctx: Ctx2D, x: number, y: number, r: number): void {
-  ctx.fillStyle = 'rgba(40,43,50,0.92)';
+  ctx.fillStyle = '#252525';
   ctx.beginPath();
   ctx.arc(x, y, r, 0, Math.PI * 2);
   ctx.fill();
-  ctx.strokeStyle = 'rgba(255,255,255,0.12)';
+  ctx.strokeStyle = 'rgba(255,255,255,0.16)';
   ctx.lineWidth = 0.8;
   ctx.stroke();
 }
