@@ -36,8 +36,6 @@ const FLASH = 0.12;
 const SPECIAL_LABEL: Partial<Record<KeyId, string>> = {
   'to-symbols': '123',
   'to-symbols2': '#+=',
-  globe: '🌐',
-  emoji: '🙂',
 };
 
 export function drawKeyboard(
@@ -60,11 +58,12 @@ export function drawKeyboard(
 
   for (const r of rects) {
     const isChar = r.id.startsWith('c:');
-    const isSpecial = !isChar && r.id !== 'space' && r.id !== 'emoji';
+    const isSpecial = !isChar && r.id !== 'space' && r.id !== 'globe';
     const pressed = flash?.key === r.id;
     if (pressed && isChar) popup = r;
 
-    if (r.id !== 'emoji') {
+    // 🌐 sits in the strip under the keys, without a key cap
+    if (r.id !== 'globe') {
       ctx.fillStyle = C.shadow;
       rr(ctx, r.x, r.y + 1, r.w, r.h, 5);
       ctx.fillStyle = pressed
@@ -81,12 +80,23 @@ export function drawKeyboard(
       drawBackspace(ctx, r.x + r.w / 2, r.y + r.h / 2);
       continue;
     }
+    // iOS draws these as outline glyphs, not colour emoji
+    if (r.id === 'emoji') {
+      drawSmiley(ctx, r.x + r.w / 2, r.y + r.h / 2, 9.5);
+      continue;
+    }
+    if (r.id === 'globe') {
+      drawGlobe(ctx, r.x + r.w / 2, r.y + r.h / 2, 10.5);
+      // 🎤 mirrored on the right of the strip (not a key the hands ever press)
+      drawMic(ctx, SCREEN_W - (r.x + r.w / 2), r.y + r.h / 2);
+      continue;
+    }
 
     ctx.fillStyle = C.label;
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
     const label = keyLabel(r.id, s.kb, strings);
-    const size = isChar ? 22 : r.id === 'emoji' ? 24 : label.length > 2 ? 15 : 20;
+    const size = isChar ? 22 : label.length > 2 ? 15 : 20;
     ctx.font = `${size}px ${font}`;
     ctx.fillText(label, r.x + r.w / 2, r.y + r.h / 2 + (isChar ? -1 : 0));
   }
@@ -166,4 +176,59 @@ export function rr(ctx: Ctx2D, x: number, y: number, w: number, h: number, r: nu
   ctx.beginPath();
   ctx.roundRect(x, y, w, h, r);
   ctx.fill();
+}
+
+/** Outline smiley of the emoji key. */
+function drawSmiley(ctx: Ctx2D, x: number, y: number, r: number): void {
+  ctx.strokeStyle = C.label;
+  ctx.fillStyle = C.label;
+  ctx.lineWidth = 1.6;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.stroke();
+  for (const dx of [-3.3, 3.3]) {
+    ctx.beginPath();
+    ctx.ellipse(x + dx, y - 2.6, 1.1, 1.6, 0, 0, Math.PI * 2);
+    ctx.fill();
+  }
+  ctx.beginPath();
+  ctx.arc(x, y + 0.6, 5, 0.18 * Math.PI, 0.82 * Math.PI);
+  ctx.stroke();
+}
+
+/** Outline globe of the keyboard switcher. */
+function drawGlobe(ctx: Ctx2D, x: number, y: number, r: number): void {
+  ctx.strokeStyle = C.label;
+  ctx.lineWidth = 1.5;
+  ctx.beginPath();
+  ctx.arc(x, y, r, 0, Math.PI * 2);
+  ctx.stroke();
+  ctx.beginPath();
+  ctx.ellipse(x, y, r * 0.45, r, 0, 0, Math.PI * 2);
+  ctx.moveTo(x, y - r);
+  ctx.lineTo(x, y + r);
+  ctx.moveTo(x - r, y);
+  ctx.lineTo(x + r, y);
+  ctx.moveTo(x - r * 0.86, y - r * 0.5);
+  ctx.lineTo(x + r * 0.86, y - r * 0.5);
+  ctx.moveTo(x - r * 0.86, y + r * 0.5);
+  ctx.lineTo(x + r * 0.86, y + r * 0.5);
+  ctx.stroke();
+}
+
+/** Outline microphone (dictation) in the strip. */
+function drawMic(ctx: Ctx2D, x: number, y: number): void {
+  ctx.strokeStyle = C.label;
+  ctx.fillStyle = C.label;
+  ctx.lineWidth = 1.6;
+  ctx.lineCap = 'round';
+  ctx.beginPath();
+  ctx.roundRect(x - 3.5, y - 10, 7, 13, 3.5);
+  ctx.fill();
+  ctx.beginPath();
+  ctx.arc(x, y - 1.5, 7, 0.08 * Math.PI, 0.92 * Math.PI);
+  ctx.moveTo(x, y + 5.5);
+  ctx.lineTo(x, y + 9);
+  ctx.stroke();
 }

@@ -359,47 +359,67 @@ function drawStatusBar(ctx: Ctx2D, clock: string, battery: number, font: string,
   ctx.fillStyle = '#000000';
   rr(ctx, SCREEN_W / 2 - 63, 11, 126, 37, 18.5);
 
-  ctx.fillStyle = fg;
+  // Icons measured from an iOS 26 screenshot (iPhone, dual SIM). Dimmed parts = no signal / empty.
+  const dim = dark ? 'rgba(255,255,255,0.4)' : 'rgba(0,0,0,0.28)';
+
+  // Dual-SIM signal: top row — 4 rising bars (SIM 1), bottom row — 4 dots (SIM 2); 3 of 4 active.
+  const tops = [25.8, 24.6, 22.9, 21.3];
   for (let i = 0; i < 4; i++) {
-    const h = 4 + i * 2.6;
-    rr(ctx, 284 + i * 4.6, 36 - h, 3, h, 1);
+    const cx = 267 + i * 6;
+    ctx.fillStyle = i < 3 ? fg : dim;
+    rr(ctx, cx - 1.65, tops[i]!, 3.3, 30 - tops[i]!, 1.65);
+    ctx.beginPath();
+    ctx.arc(cx, 33.9, 1.7, 0, Math.PI * 2);
+    ctx.fill();
   }
+
+  // Wi-Fi: two thick arcs and a filled wedge, all from one point at the bottom
+  const wx = 303;
+  const wy = 35.4;
+  const a0 = -Math.PI * 0.75;
+  const a1 = -Math.PI * 0.25;
   ctx.strokeStyle = fg;
+  ctx.fillStyle = fg;
   ctx.lineCap = 'round';
-  ctx.lineWidth = 2;
-  for (const r of [3, 7, 11]) {
+  ctx.lineWidth = 2.4;
+  for (const r of [12.2, 8]) {
     ctx.beginPath();
-    ctx.arc(314, 37, r, -Math.PI * 0.78, -Math.PI * 0.22);
+    ctx.arc(wx, wy, r, a0, a1);
     ctx.stroke();
   }
-  if (dark) {
-    // iOS dark: battery with the percentage inside; the filled part shows the level, red when low
-    ctx.fillStyle = 'rgba(255,255,255,0.35)';
-    rr(ctx, 334, 24.5, 27, 13.5, 4);
-    rr(ctx, 362, 29, 1.8, 4.5, 0.9);
-    ctx.save();
-    ctx.beginPath();
-    ctx.rect(334, 24.5, 27 * (level / 100), 13.5);
-    ctx.clip();
-    ctx.fillStyle = low ? '#ff3b30' : '#ffffff';
-    rr(ctx, 334, 24.5, 27, 13.5, 4);
-    ctx.restore();
-    ctx.fillStyle = low || level < 45 ? '#ffffff' : '#000000';
-    ctx.font = `700 10.5px ${font}`;
-    ctx.textAlign = 'center';
-    ctx.fillText(String(level), 347.5, 31.5);
-    ctx.textAlign = 'left';
-  } else {
-    ctx.lineWidth = 1;
-    ctx.strokeStyle = 'rgba(0,0,0,0.4)';
-    ctx.beginPath();
-    ctx.roundRect(335.5, 25.5, 25, 12, 3.5);
-    ctx.stroke();
-    ctx.fillStyle = 'rgba(0,0,0,0.4)';
-    rr(ctx, 362, 29.5, 1.6, 4, 0.8);
-    ctx.fillStyle = low ? '#ff3b30' : '#000000';
-    rr(ctx, 337.5, 27.5, Math.max(1.5, 21 * (level / 100)), 8, 2);
-  }
+  ctx.lineJoin = 'round';
+  ctx.lineWidth = 1.2;
+  ctx.beginPath();
+  ctx.moveTo(wx, wy - 0.6);
+  ctx.arc(wx, wy - 0.6, 4.2, a0, a1);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  // Battery with the percentage inside: filled part = level (red when low), the rest dimmed
+  const bx = 321.3;
+  const by = 21.7;
+  const bw = 29.6;
+  const bh = 14.6;
+  ctx.fillStyle = dim;
+  rr(ctx, bx, by, bw, bh, 4.6);
+  ctx.save();
+  ctx.beginPath();
+  ctx.rect(bx, by, bw * (level / 100), bh);
+  ctx.clip();
+  ctx.fillStyle = low ? '#ff3b30' : fg;
+  rr(ctx, bx, by, bw, bh, 4.6);
+  ctx.restore();
+  ctx.fillStyle = level === 100 ? fg : dim;
+  ctx.beginPath();
+  ctx.roundRect(bx + bw + 0.8, by + bh / 2 - 2.7, 2, 5.4, [0, 2, 2, 0]);
+  ctx.fill();
+  ctx.fillStyle = dark ? '#000000' : '#ffffff';
+  ctx.font = `800 12.5px ${font}`;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'middle';
+  ctx.fillText(String(level), bx + bw / 2, by + bh / 2 + 0.6);
+  ctx.textAlign = 'left';
 }
 
 /** Round photo, or initials on a gradient (Telegram colours depend on the name, iMessage is grey). */

@@ -114,11 +114,11 @@ export function keyboardGeometry(lang: Lang, page: Page, width: number, height: 
     }
   });
 
-  // Bottom row: [123/ABC] [🌐] [ space ] [return]
+  // Bottom row: [123/ABC] [emoji] [ space ] [return] — like Face ID iPhones
   const y4 = 3 * rowH + (rowH - keyH) / 2;
   const bottom: { id: KeyId; frac: number }[] = [
     { id: page === 'letters' ? 'to-symbols' : 'to-letters', frac: 0.12 },
-    { id: 'globe', frac: 0.12 },
+    { id: 'emoji', frac: 0.12 },
     { id: 'space', frac: 0.52 },
     { id: 'return', frac: 0.24 },
   ];
@@ -129,9 +129,10 @@ export function keyboardGeometry(lang: Lang, page: Page, width: number, height: 
     x += w;
   }
 
-  // Strip below the keyboard (where the iPhone home indicator lives): emoji on the left
+  // Strip below the keyboard (where the home indicator lives): 🌐 on the left (the 🎤 on the right
+  // is only drawn, never pressed)
   const e = Math.min(keyH, barH * 0.45);
-  rects.push({ id: 'emoji', x: padX + unit * 0.3, y: 4 * rowH + barH * 0.1, w: e, h: e });
+  rects.push({ id: 'globe', x: padX + unit * 0.3, y: 4 * rowH + barH * 0.1, w: e, h: e });
 
   return rects;
 }
