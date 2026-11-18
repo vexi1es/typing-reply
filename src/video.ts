@@ -18,6 +18,8 @@ export interface VideoParams {
   /** Contact photo as a data: URL (already cropped to a square). */
   avatar: string | null;
   voiceSeconds: number;
+  /** Battery level for the status bar, %. */
+  battery: number;
 }
 
 export async function makeVideo(
@@ -35,10 +37,11 @@ export async function makeVideo(
   await loadFonts();
   const avatar = p.avatar ? await createImageBitmap(await (await fetch(p.avatar)).blob()) : null;
 
-  // The reply is “sent” now; the voice message arrived a couple of minutes earlier.
-  const now = new Date();
-  const ago = new Date(now.getTime() - (2 + Math.ceil(p.voiceSeconds / 60)) * 60_000);
-  const look = { theme: p.theme, name: p.name, avatar, clock: hhmm(now), voiceClock: hhmm(ago) };
+  // Real time: the video ends right now (the status bar clock runs during the video, so it may
+  // tick over a minute); the voice message arrived a couple of minutes before typing started.
+  const startTime = Date.now() - timeline.duration * 1000;
+  const ago = new Date(startTime - (1 + Math.ceil(p.voiceSeconds / 60)) * 60_000);
+  const look = { theme: p.theme, name: p.name, avatar, startTime, voiceClock: hhmm(ago), battery: p.battery };
 
   try {
     const blob = await encodeMp4(timeline, { ...VIDEO, look, onProgress, signal });

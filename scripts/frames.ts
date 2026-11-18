@@ -46,8 +46,9 @@ for (const raw of times.split(',')) {
       theme: theme as ChatTheme,
       name,
       avatar: avatar as unknown as CanvasImageSource,
-      clock: '14:32',
+      startTime: new Date(2026, 10, 18, 14, 31, 40).getTime(),
       voiceClock: '14:29',
+      battery: Number(process.env.BATTERY ?? 85),
     },
   });
   const file = `out/frames/${theme}-${t.toFixed(2)}.png`;

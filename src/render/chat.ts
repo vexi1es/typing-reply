@@ -21,13 +21,27 @@ export interface ChatLook {
   name: string;
   /** Contact photo (already square). Without it, initials on a coloured circle. */
   avatar?: CanvasImageSource | null;
-  /** Clock in the status bar and on the sent message, e.g. "14:32". */
-  clock: string;
+  /** Wall-clock time (epoch ms) at t = 0 of the video: the status bar clock runs from here. */
+  startTime: number;
   /** When the voice message arrived, e.g. "14:29". */
   voiceClock: string;
+  /** Battery level in the status bar, 1–100 %. */
+  battery: number;
 }
 
-export const DEFAULT_LOOK: ChatLook = { theme: 'telegram-dark', name: 'Друг', clock: '9:41', voiceClock: '9:38' };
+export const DEFAULT_LOOK: ChatLook = {
+  theme: 'telegram-dark',
+  name: 'Друг',
+  startTime: Date.UTC(2026, 0, 1, 9, 41),
+  voiceClock: '9:38',
+  battery: 85,
+};
+
+/** “14:32” at video time `t` (local time of the device that renders). */
+export function clockAt(look: ChatLook, t: number): string {
+  const d = new Date(look.startTime + t * 1000);
+  return `${d.getHours()}:${String(d.getMinutes()).padStart(2, '0')}`;
+}
 
 export interface Palette {
   /** Dark UI: white status bar, dark keyboard. */
@@ -228,7 +242,7 @@ function rng(seed: number): () => number {
 // ——— Header ———
 
 /** Status bar + navigation with the contact's name and photo. */
-export function drawHeader(ctx: Ctx2D, look: ChatLook, strings: VideoStrings, font: string): void {
+export function drawHeader(ctx: Ctx2D, look: ChatLook, strings: VideoStrings, font: string, clock: string): void {
   const p = PALETTES[look.theme];
   if (look.theme === 'telegram-dark') {
     // Soft darkening under the status bar so the pills read on any wallpaper
@@ -237,7 +251,7 @@ export function drawHeader(ctx: Ctx2D, look: ChatLook, strings: VideoStrings, fo
     g.addColorStop(1, 'rgba(0,0,0,0)');
     ctx.fillStyle = g;
     ctx.fillRect(0, 0, SCREEN_W, 120);
-    drawStatusBar(ctx, look.clock, font, true);
+    drawStatusBar(ctx, clock, look.battery, font, true);
     drawGlassHeader(ctx, look, strings, font);
     return;
   }
@@ -247,7 +261,7 @@ export function drawHeader(ctx: Ctx2D, look: ChatLook, strings: VideoStrings, fo
   ctx.fillRect(0, 0, SCREEN_W, bottom);
   ctx.fillStyle = p.hairline;
   ctx.fillRect(0, bottom - 0.5, SCREEN_W, 0.5);
-  drawStatusBar(ctx, look.clock, font, false);
+  drawStatusBar(ctx, clock, look.battery, font, false);
 
   ctx.textBaseline = 'middle';
   if (look.theme === 'imessage') {
@@ -330,7 +344,9 @@ function glassPill(ctx: Ctx2D, x: number, y: number, w: number, h: number): void
   ctx.stroke();
 }
 
-function drawStatusBar(ctx: Ctx2D, clock: string, font: string, dark: boolean): void {
+function drawStatusBar(ctx: Ctx2D, clock: string, battery: number, font: string, dark: boolean): void {
+  const level = Math.min(100, Math.max(1, Math.round(battery)));
+  const low = level <= 20;
   const fg = dark ? '#ffffff' : '#000000';
   ctx.fillStyle = fg;
   ctx.font = `600 17px ${font}`;
@@ -357,14 +373,21 @@ function drawStatusBar(ctx: Ctx2D, clock: string, font: string, dark: boolean): 
     ctx.stroke();
   }
   if (dark) {
-    // iOS dark: white battery with the percentage inside
-    ctx.fillStyle = '#ffffff';
+    // iOS dark: battery with the percentage inside; the filled part shows the level, red when low
+    ctx.fillStyle = 'rgba(255,255,255,0.35)';
     rr(ctx, 334, 24.5, 27, 13.5, 4);
     rr(ctx, 362, 29, 1.8, 4.5, 0.9);
-    ctx.fillStyle = '#000000';
+    ctx.save();
+    ctx.beginPath();
+    ctx.rect(334, 24.5, 27 * (level / 100), 13.5);
+    ctx.clip();
+    ctx.fillStyle = low ? '#ff3b30' : '#ffffff';
+    rr(ctx, 334, 24.5, 27, 13.5, 4);
+    ctx.restore();
+    ctx.fillStyle = low || level < 45 ? '#ffffff' : '#000000';
     ctx.font = `700 10.5px ${font}`;
     ctx.textAlign = 'center';
-    ctx.fillText('85', 347.5, 31.5);
+    ctx.fillText(String(level), 347.5, 31.5);
     ctx.textAlign = 'left';
   } else {
     ctx.lineWidth = 1;
@@ -374,8 +397,8 @@ function drawStatusBar(ctx: Ctx2D, clock: string, font: string, dark: boolean): 
     ctx.stroke();
     ctx.fillStyle = 'rgba(0,0,0,0.4)';
     rr(ctx, 362, 29.5, 1.6, 4, 0.8);
-    ctx.fillStyle = '#000000';
-    rr(ctx, 337.5, 27.5, 16, 8, 2);
+    ctx.fillStyle = low ? '#ff3b30' : '#000000';
+    rr(ctx, 337.5, 27.5, Math.max(1.5, 21 * (level / 100)), 8, 2);
   }
 }
 

@@ -34,6 +34,7 @@ const KEY = {
   voice: 'pjt.voice',
   theme: 'pjt.theme',
   mode: 'pjt.mode',
+  battery: 'pjt.battery',
 };
 const storage = {
   get: (k: string) => {
@@ -174,6 +175,29 @@ voiceEl.addEventListener('input', () => {
 updateVoice();
 
 // ——— Look ———
+
+// Battery: the user's own value if they moved the slider; otherwise the real level where the
+// browser exposes it (Chrome / Android — Safari on iPhone does not), else 85 %.
+const batteryEl = $<HTMLInputElement>('battery');
+const batteryValue = $<HTMLElement>('battery-value');
+function updateBattery() {
+  batteryValue.textContent = `${batteryEl.value}%`;
+  batteryEl.style.setProperty('--fill', `${((Number(batteryEl.value) - 1) / 99) * 100}%`);
+}
+const savedBattery = Number(storage.get(KEY.battery));
+if (savedBattery >= 1 && savedBattery <= 100) batteryEl.value = String(savedBattery);
+else {
+  const nav = navigator as Navigator & { getBattery?: () => Promise<{ level: number }> };
+  void nav.getBattery?.().then((b) => {
+    batteryEl.value = String(Math.max(1, Math.round(b.level * 100)));
+    updateBattery();
+  }).catch(() => {});
+}
+batteryEl.addEventListener('input', () => {
+  storage.set(KEY.battery, batteryEl.value);
+  updateBattery();
+});
+updateBattery();
 
 const themeInputs = [...document.querySelectorAll<HTMLInputElement>('input[name="theme"]')];
 const savedTheme = storage.get(KEY.theme);
@@ -317,6 +341,7 @@ form.addEventListener('submit', async (e) => {
         name: nameEl.value.trim() || (lang === 'uz' ? 'Doʻst' : 'Друг'),
         avatar,
         voiceSeconds: Number(voiceEl.value),
+        battery: Number(batteryEl.value),
       },
       setProgress,
       controller.signal,

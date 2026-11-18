@@ -5,6 +5,7 @@ import {
   DEFAULT_LOOK,
   HEADER_BOTTOM,
   PALETTES,
+  clockAt,
   drawChecks,
   drawDatePill,
   drawHeader,
@@ -165,6 +166,7 @@ export function renderFrame(ctx: Ctx2D, tl: Timeline, t: number, opts: RenderOpt
   // Chat: laid out bottom-up from the input field
   let y = fTop - (C.panel ? 18 : 12);
   if (s.sentAt !== null) {
+    const sentClock = clockAt(look, s.sentAt);
     ctx.font = `${MSG_FONT}px ${font}`;
     const bl = wrap(ctx, s.graphemes, BUBBLE_MAX_W - BUBBLE_PAD_X * 2);
     const widths = bl.map((l) => ctx.measureText(l).width);
@@ -174,7 +176,7 @@ export function renderFrame(ctx: Ctx2D, tl: Timeline, t: number, opts: RenderOpt
     if (tg) {
       // Time + ✓✓ inside the bubble: on the last line if it fits, otherwise on its own line.
       ctx.font = `400 11px ${font}`;
-      const metaW = ctx.measureText(look.clock).width + 20;
+      const metaW = ctx.measureText(sentClock).width + 20;
       const lastW = widths[widths.length - 1]! + BUBBLE_PAD_X * 2 + metaW + 4;
       if (lastW <= BUBBLE_MAX_W) bw = Math.max(bw, lastW);
       else bh += 14;
@@ -210,7 +212,7 @@ export function renderFrame(ctx: Ctx2D, tl: Timeline, t: number, opts: RenderOpt
       ctx.font = `400 11px ${font}`;
       ctx.fillStyle = C.outMeta;
       ctx.textAlign = 'right';
-      ctx.fillText(look.clock, bx + bw - 26, y + bh - 11);
+      ctx.fillText(sentClock, bx + bw - 26, y + bh - 11);
       ctx.textAlign = 'left';
       drawChecks(ctx, bx + bw - 22, y + bh - 11, C.outMeta);
     }
@@ -220,7 +222,7 @@ export function renderFrame(ctx: Ctx2D, tl: Timeline, t: number, opts: RenderOpt
   if (voiceTop - 34 > HEADER_BOTTOM[look.theme]) drawDatePill(ctx, look, strings, voiceTop - 10, font);
 
   // Header on top of the chat (messages scroll under it, like in a real messenger)
-  drawHeader(ctx, look, strings, font);
+  drawHeader(ctx, look, strings, font, clockAt(look, t));
 
   // Keyboard
   if (slide < 1) drawKeyboard(ctx, s, t, slide, strings, font, C.dark);

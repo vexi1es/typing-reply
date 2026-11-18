@@ -81,6 +81,10 @@
 
         <section class="card">
           <h2 data-i18n="lookLabel">Как выглядит чат</h2>
+          <label class="voice-len">
+            <span class="label-row"><span data-i18n="batteryLabel">Заряд батареи</span><b id="battery-value">85%</b></span>
+            <input id="battery" type="range" min="1" max="100" step="1" value="85" />
+          </label>
           <div class="themes" role="radiogroup">
             <label class="theme-tile tgd">
               <input type="radio" name="theme" value="telegram-dark" checked />
