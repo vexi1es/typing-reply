@@ -287,7 +287,7 @@ function drawGlassHeader(ctx: Ctx2D, look: ChatLook, strings: VideoStrings, font
   // Back pill: ‹ + white counter badge
   glassPill(ctx, 15, y, 68, h);
   drawChevron(ctx, 27, y + h / 2, '#ffffff', 2.6);
-  const unread = String(12 + (hash(look.name) % 380));
+  const unread = '67';
   ctx.font = `500 13px ${font}`;
   const bw = Math.max(22, ctx.measureText(unread).width + 12);
   ctx.fillStyle = '#ffffff';
